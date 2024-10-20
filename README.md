@@ -14,3 +14,15 @@ pip freeze > requirements.txt
 
 ## Uvicorn 실행
 uvicorn main:app --reload
+
+# 구조 설명
+
+## main.py
+- FastAPI 애플리케이션을 생성하고 엔드포인트에 대한 라우터를 등록
+- 프로그램의 진입점으로 uvicorn을 사용해 서버를 실행
+
+## chatbot_router.py
+- /api/chatbot 경로데 대한 엔드포인트를 정의
+- /api/chatbot 경로로 POST 요청이 들어오면 결과를 반환
+
+## proce

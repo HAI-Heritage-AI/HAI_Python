@@ -1,24 +1,24 @@
-from transformers import XLMRobertaTokenizer, XLMRobertaForSequenceClassification
+#app/chatbot/chat.py
+from transformers import GPT2LMHeadModel, PreTrainedTokenizerFast
 import torch
 
-# XLM-R 모델과 토크나이저 로드
-tokenizer = XLMRobertaTokenizer.from_pretrained("xlm-roberta-base")
-model = XLMRobertaForSequenceClassification.from_pretrained("xlm-roberta-base")
+# KoGPT 모델과 토크나이저 로드 (전역 변수로 설정하여 재사용)
+tokenizer = PreTrainedTokenizerFast.from_pretrained("skt/kogpt2-base-v2",
+                                                    bos_token='</s>', eos_token='</s>', unk_token='<unk>',
+                                                    pad_token='<pad>', mask_token='<mask>')
+model = GPT2LMHeadModel.from_pretrained("skt/kogpt2-base-v2")
 
 # 챗봇 함수 정의
-def process_chat(input_text):
-    # 입력 텍스트를 토큰화
-    inputs = tokenizer(input_text, return_tensors="pt")
+def process_chat(input_text: str) -> str:
+    # 입력 텍스트를 KoGPT 형식에 맞게 토큰화
+    input_ids = tokenizer.encode(input_text, return_tensors='pt')
     
-    # 모델을 통해 답변 예측
+    # 모델을 통해 예측 수행 (대화 응답 생성)
     with torch.no_grad():
-        outputs = model(**inputs)
+        generated_ids = model.generate(input_ids, max_length=100, num_return_sequences=1, pad_token_id=tokenizer.pad_token_id)
     
-    # 예측 결과를 해석 (여기서는 간단하게 logits을 출력으로 사용)
-    predicted_class = torch.argmax(outputs.logits, dim=1).item()
+    # 생성된 텍스트를 디코딩하여 응답으로 변환
+    response = tokenizer.decode(generated_ids[0], skip_special_tokens=True)
     
-    # 간단한 응답 처리 (여기서는 0 또는 1로 분류된 결과를 가정)
-    if predicted_class == 0:
-        return "챗봇 응답: 긍정적인 대답입니다!"
-    else:
-        return "챗봇 응답: 부정적인 대답입니다!"
+    return response
+
