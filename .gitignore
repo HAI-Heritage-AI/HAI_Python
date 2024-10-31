@@ -1,5 +1,0 @@
-# CSV 파일 무시
-*.csv
-
-# JSON 파일 무시
-*.json

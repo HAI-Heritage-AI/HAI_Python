@@ -1,4 +1,0 @@
-fastapi
-uvicorn
-perplexity-python
-python-dotenv
