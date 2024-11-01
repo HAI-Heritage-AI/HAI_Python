@@ -10,11 +10,12 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 테스트를 위해 모든 도메인 허용으로 변경
+    allow_origins=["*"],  # 모든 출처에서의 요청을 허용합니다.
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 # PostgreSQL 데이터베이스 연결 설정
 DATABASE_URL = "postgresql+psycopg2://postgres:iam%40123@localhost/heritage_db"
@@ -26,16 +27,15 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 def get_heritage():
     session = SessionLocal()
     try:
-        query = text("SELECT * FROM national_heritage")
-        result = session.execute(query).fetchall()
-        heritage_data = [dict(row._mapping) for row in result]  # SQLAlchemy 2.0 이상에서는 _mapping 사용
+        # session.execute로 raw SQL 쿼리 실행
+        result = session.execute(text("SELECT * FROM national_heritage")).fetchall()
+        heritage_data = [dict(row._mapping) for row in result]
         return heritage_data
     except SQLAlchemyError as e:
         print("Database Error:", e)  # 에러 로그 추가
         return {"error": str(e)}
     finally:
         session.close()
-
 
 # 필터 데이터 API 추가 (종목, 지역, 시대 필터)
 @app.get("/heritage/filter")
