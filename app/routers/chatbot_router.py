@@ -1,6 +1,6 @@
 # app/routers/chatbot_router.py
 from fastapi import APIRouter
-from app.chatbot.chat import process_chat
+from app.Chatbot.chat import process_chat
 
 chatbot_router = APIRouter()
 
