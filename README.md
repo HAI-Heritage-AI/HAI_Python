@@ -26,3 +26,14 @@ uvicorn main:app --reload
 - /api/chatbot 경로로 POST 요청이 들어오면 결과를 반환
 
 ## proce
+
+# 기타 conda 명령어
+
+## 콘다 비활성화
+> conda deactivate
+
+## 콘다 환경 리스트
+conda env list
+
+## 콘다 환경 삭제
+> conda remove --name "환경 이름" --all
