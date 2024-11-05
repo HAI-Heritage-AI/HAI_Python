@@ -3,11 +3,12 @@ import faiss
 from sentence_transformers import SentenceTransformer
 import numpy as np
 import pickle
+from sklearn.preprocessing import normalize
 
 # 1. FAISS 인덱스와 메타데이터 파일 경로 설정
 base_dir = os.path.dirname(os.path.realpath(__file__))  # 현재 파일의 경로를 가져옵니다.
-index_file = os.path.join(base_dir, "../FAISS/faiss_index_1000_02.bin")
-metadata_file = os.path.join(base_dir, "../FAISS/faiss_metadata_1000_02.pkl")
+index_file = os.path.join(base_dir, "../FAISS/faiss_index_1000_processed.bin")
+metadata_file = os.path.join(base_dir, "../FAISS/faiss_metadata_1000_processed.pkl")
 
 # 2. FAISS 인덱스 불러오기
 try:
@@ -30,7 +31,7 @@ except Exception as e:
 model = SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')
 user_question = "서울에 있는 도자기 문화유산을 알려줘"  # 사용자의 임시 질문
 embedding = model.encode(user_question).astype('float32').reshape(1, -1)
-
+embedding = normalize(embedding, norm='l2')
 # 5. FAISS 인덱스에서 유사한 벡터 검색
 D, I = index.search(embedding, k=5)  # 가장 유사한 5개 검색
 
