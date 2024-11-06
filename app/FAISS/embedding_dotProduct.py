@@ -83,25 +83,23 @@ for row in rows:
 
 # 4. FAISS 인덱스 생성 및 데이터 추가 (Cosine 유사도 사용)
 embedding_dim = len(embeddings[0])
-# Cosine 유사도를 사용하기 위해 IndexFlatIP 사용
+# 내적을 사용하기 위해 IndexFlatIP 사용
 index = faiss.IndexFlatIP(embedding_dim)
 
 # FAISS는 numpy 배열로 데이터를 다루므로 리스트를 numpy로 변환
 embeddings_np = np.array(embeddings).astype('float32')
 
-# L2 정규화를 적용하여 벡터를 정규화
-embeddings_np = normalize(embeddings_np, norm='l2')
 
 # 인덱스에 벡터 추가
 index.add(embeddings_np)
 
 # 5. FAISS 인덱스 및 메타데이터 파일 저장
 base_dir = os.path.dirname(os.path.realpath(__file__))
-faiss_index_file = os.path.join(base_dir, "../FAISS/faiss_index_1000_cosine.bin")
+faiss_index_file = os.path.join(base_dir, "../FAISS/faiss_index_1000_dotProduct.bin")
 faiss.write_index(index, faiss_index_file)
 print(f"FAISS 인덱스를 '{faiss_index_file}' 파일로 저장했습니다.")
 
-metadata_file = os.path.join(base_dir, "../FAISS/faiss_metadata_1000_cosine.pkl")
+metadata_file = os.path.join(base_dir, "../FAISS/faiss_metadata_1000_dotProduct.pkl")
 with open(metadata_file, "wb") as f:
     pickle.dump(metadata, f)
 print(f"메타데이터를 '{metadata_file}' 파일로 저장했습니다.")

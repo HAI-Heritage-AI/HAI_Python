@@ -3,15 +3,15 @@ import faiss
 from sentence_transformers import SentenceTransformer
 import numpy as np
 import pickle
-from sklearn.preprocessing import normalize
 
 # 1. FAISS 인덱스와 메타데이터 파일 경로 설정
 base_dir = os.path.dirname(os.path.realpath(__file__))  # 현재 파일의 경로를 가져옵니다.
-index_file = os.path.join(base_dir, "../FAISS/faiss_index_1000_processed.bin")
-metadata_file = os.path.join(base_dir, "../FAISS/faiss_metadata_1000_processed.pkl")
+index_file = os.path.join(base_dir, "../FAISS/Index/faiss_index_1000_dotProduct.bin")
+metadata_file = os.path.join(base_dir, "../FAISS/Metadata/faiss_metadata_1000_dotProduct.pkl")
 
-# 2. FAISS 인덱스 불러오기
+# 2. FAISS 인덱스 불러오기 (내적을 사용하기 위해 IndexFlatIP로 생성)
 try:
+    # 기존 인덱스를 파일 경로에서 불러옵니다.
     index = faiss.read_index(index_file)
     print(f"FAISS 인덱스 '{index_file}'을(를) 성공적으로 불러왔습니다.")
 except Exception as e:
@@ -29,14 +29,15 @@ except Exception as e:
 
 # 4. 사용자의 임시 질문을 입력받아 임베딩
 model = SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')
-user_question = "서울에 있는 도자기 문화유산을 알려줘"  # 사용자의 임시 질문
+user_question = "경복궁이 어떻게 만들어졌어?"  # 사용자의 임시 질문
 embedding = model.encode(user_question).astype('float32').reshape(1, -1)
-embedding = normalize(embedding, norm='l2')
+# 내적 방식에서는 정규화를 하지 않음
+
 # 5. FAISS 인덱스에서 유사한 벡터 검색
-D, I = index.search(embedding, k=5)  # 가장 유사한 5개 검색
+D, I = index.search(embedding, k=5)  # 가장 유사한 5개 검색 (내적 사용)
 
 print(f"가장 유사한 벡터들의 인덱스: {I}")
-print(f"각 유사한 벡터와의 거리: {D}")
+print(f"각 유사한 벡터와의 유사도: {D}")
 
 # 6. 검색 결과와 메타데이터 매핑
 for idx in I[0]:

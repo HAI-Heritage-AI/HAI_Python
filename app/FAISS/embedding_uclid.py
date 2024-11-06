@@ -99,7 +99,7 @@ for row in rows:
         }
         metadata.append(metadata_entry)
 
-# 4. FAISS 인덱스 생성 및 데이터 추가
+# 4. 유클리디안 거리(L2 거리)방식을 사용해서 FAISS 인덱스 생성 및 데이터 추가
 embedding_dim = len(embeddings[0])
 index = faiss.IndexFlatL2(embedding_dim)
 
