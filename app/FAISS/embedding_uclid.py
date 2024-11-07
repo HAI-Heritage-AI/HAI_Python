@@ -1,4 +1,4 @@
-import os
+import os 
 import psycopg2
 import re
 import kss
@@ -17,7 +17,7 @@ try:
         password="iam@123"
     )
     cursor = conn.cursor()
-    cursor.execute("SELECT ccbaAsno, content FROM national_heritage LIMIT 1000")  # 1000개의 데이터 가져오기
+    cursor.execute("SELECT ccbaAsno, content FROM national_heritage")  # 1000개의 데이터 가져오기
     rows = cursor.fetchall()
     conn.close()
 except Exception as e:
@@ -34,6 +34,7 @@ metadata = []
 # 3. 데이터 전처리 및 슬라이딩 윈도우 방식 적용
 max_tokens = 512
 stride = 256
+context_overlap = 2  # 문맥 보존을 위해 중첩할 문장 수
 
 for row in rows:
     original_id, text = row
@@ -44,60 +45,32 @@ for row in rows:
     # 각 문장에서 구두점 제거
     processed_sentences = [re.sub(r'[\.,!?]', '', sentence) for sentence in sentences]
 
-    current_tokens = []
     current_text = ""
     segment_id = 0
 
-    for sentence in processed_sentences:
-        sentence_tokens = tokenizer.tokenize(sentence)
+    for i in range(0, len(processed_sentences), stride):
+        # 현재 슬라이딩 윈도우 범위의 문장들
+        current_sentences = processed_sentences[i:i + stride]
 
-        # 만약 하나의 문장이 max_tokens보다 크다면, 문장을 더 잘게 나눈다.
-        while len(sentence_tokens) > max_tokens:
-            sub_tokens = sentence_tokens[:max_tokens]
-            sub_text = tokenizer.convert_tokens_to_string(sub_tokens)
-            embedding = model.encode(sub_text)
-            embeddings.append(embedding)
-            metadata_entry = {
-                "original_id": original_id,
-                "segment_id": segment_id,
-                "text_segment": sub_text
-            }
-            metadata.append(metadata_entry)
-            segment_id += 1
-            sentence_tokens = sentence_tokens[stride:]  # stride 만큼 다음 부분으로 이동
+        # 이전 문장 일부를 포함해 문맥 보존
+        if i > 0:
+            overlap_sentences = processed_sentences[max(0, i - context_overlap):i]
+            current_sentences = overlap_sentences + current_sentences
 
-        # 현재 문장 추가 후 토큰 수가 max_tokens를 초과하는지 확인
-        if len(current_tokens) + len(sentence_tokens) > max_tokens:
-            # 현재 묶인 문장들을 임베딩
-            if current_text:
-                embedding = model.encode(current_text)
-                embeddings.append(embedding)
-                metadata_entry = {
-                    "original_id": original_id,
-                    "segment_id": segment_id,
-                    "text_segment": current_text
-                }
-                metadata.append(metadata_entry)
-                segment_id += 1
+        # 문장들을 하나의 텍스트로 결합
+        current_text = " ".join(current_sentences)
 
-            # 새로운 문장으로 초기화
-            current_tokens = sentence_tokens
-            current_text = sentence
-        else:
-            # 현재 문장 묶음에 추가
-            current_tokens.extend(sentence_tokens)
-            current_text = current_text + " " + sentence if current_text else sentence
-
-    # 마지막으로 남은 문장들도 임베딩
-    if current_text:
+        # 임베딩 생성
         embedding = model.encode(current_text)
         embeddings.append(embedding)
+
         metadata_entry = {
             "original_id": original_id,
             "segment_id": segment_id,
             "text_segment": current_text
         }
         metadata.append(metadata_entry)
+        segment_id += 1
 
 # 4. 유클리디안 거리(L2 거리)방식을 사용해서 FAISS 인덱스 생성 및 데이터 추가
 embedding_dim = len(embeddings[0])

@@ -6,8 +6,8 @@ import pickle
 
 # 1. FAISS 인덱스와 메타데이터 파일 경로 설정
 base_dir = os.path.dirname(os.path.realpath(__file__))  # 현재 파일의 경로를 가져옵니다.
-index_file = os.path.join(base_dir, "../FAISS/Index/faiss_index_1000_dotProduct.bin")
-metadata_file = os.path.join(base_dir, "../FAISS/Metadata/faiss_metadata_1000_dotProduct.pkl")
+index_file = os.path.join(base_dir, "../FAISS/Index/faiss_index_full_dotProduct.bin")
+metadata_file = os.path.join(base_dir, "../FAISS/Metadata/faiss_metadata_full_dotProduct.pkl")
 
 # 2. FAISS 인덱스 불러오기 (내적을 사용하기 위해 IndexFlatIP로 생성)
 try:

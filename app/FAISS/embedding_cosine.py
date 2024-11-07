@@ -18,7 +18,7 @@ try:
         password="iam@123"
     )
     cursor = conn.cursor()
-    cursor.execute("SELECT ccbaAsno, content FROM national_heritage LIMIT 1000")  # 1000개의 데이터 가져오기
+    cursor.execute("SELECT ccbaAsno, content FROM national_heritage")  # 1000개의 데이터 가져오기
     rows = cursor.fetchall()
     conn.close()
 except Exception as e:
@@ -33,6 +33,10 @@ embeddings = []
 metadata = []
 
 # 3. 데이터 전처리 및 슬라이딩 윈도우 방식 적용
+max_tokens = 512
+stride = 256
+context_overlap = 2  # 문맥 보존을 위해 중첩할 문장 수
+
 for row in rows:
     original_id, text = row
 
@@ -42,48 +46,39 @@ for row in rows:
     # 각 문장에서 구두점 제거
     processed_sentences = [re.sub(r'[\.,!?]', '', sentence) for sentence in sentences]
 
-    # 슬라이딩 윈도우 방식으로 512 토큰 이하로 문장 묶기
-    max_tokens = 512
-    current_tokens = []
     current_text = ""
     segment_id = 0
 
-    for sentence in processed_sentences:
-        sentence_tokens = tokenizer.tokenize(sentence)
-        if len(current_tokens) + len(sentence_tokens) > max_tokens:
-            # 현재 묶인 문장들을 임베딩
-            if current_text:
-                embedding = model.encode(current_text)
-                embeddings.append(embedding)
-                metadata_entry = {
-                    "original_id": original_id,
-                    "segment_id": segment_id,
-                    "text_segment": current_text
-                }
-                metadata.append(metadata_entry)
-                segment_id += 1
+    i = 0
+    while i < len(processed_sentences):
+        # 현재 슬라이딩 윈도우 범위의 문장들
+        current_sentences = processed_sentences[i:i + stride]
 
-            # 새로운 문장으로 초기화
-            current_tokens = sentence_tokens
-            current_text = sentence
-        else:
-            current_tokens.extend(sentence_tokens)
-            current_text = current_text + " " + sentence if current_text else sentence
+        # 이전 문장 일부를 포함해 문맥 보존
+        if i > 0:
+            overlap_sentences = processed_sentences[max(0, i - context_overlap):i]
+            current_sentences = overlap_sentences + current_sentences
 
-    # 마지막으로 남은 문장들도 임베딩
-    if current_text:
+        # 문장들을 하나의 텍스트로 결합
+        current_text = " ".join(current_sentences)
+
+        # 임베딩 생성
         embedding = model.encode(current_text)
         embeddings.append(embedding)
+
         metadata_entry = {
             "original_id": original_id,
             "segment_id": segment_id,
             "text_segment": current_text
         }
         metadata.append(metadata_entry)
+        segment_id += 1
+
+        # stride 만큼 이동
+        i += stride - context_overlap
 
 # 4. FAISS 인덱스 생성 및 데이터 추가 (Cosine 유사도 사용)
 embedding_dim = len(embeddings[0])
-# Cosine 유사도를 사용하기 위해 IndexFlatIP 사용
 index = faiss.IndexFlatIP(embedding_dim)
 
 # FAISS는 numpy 배열로 데이터를 다루므로 리스트를 numpy로 변환
