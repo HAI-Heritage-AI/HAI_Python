@@ -6,7 +6,6 @@ import faiss
 import pickle
 import numpy as np
 from sentence_transformers import SentenceTransformer
-from transformers import AutoTokenizer
 from sklearn.preprocessing import normalize
 
 # 1. PostgreSQL에서 1000개의 데이터 가져오기
@@ -26,9 +25,7 @@ except Exception as e:
     exit()
 
 # 2. 모델 및 토크나이저 로드
-model = SentenceTransformer('snunlp/KR-SBERT-V40K-klueNLI-augSTS')  # 여기서 모델을 변경
-tokenizer = AutoTokenizer.from_pretrained('snunlp/KR-SBERT-V40K-klueNLI-augSTS')
-
+model = SentenceTransformer('jhgan/ko-sroberta-multitask')  # 모델을 jhgan/ko-sroberta-multitask로 변경
 embeddings = []
 metadata = []
 
@@ -77,26 +74,35 @@ for row in rows:
         # stride 만큼 이동
         i += stride - context_overlap
 
-# 4. FAISS 인덱스 생성 및 데이터 추가 (Cosine 유사도 사용)
-embedding_dim = len(embeddings[0])
-index = faiss.IndexFlatIP(embedding_dim)
-
-# FAISS는 numpy 배열로 데이터를 다루므로 리스트를 numpy로 변환
-embeddings_np = np.array(embeddings).astype('float32')
-
-# L2 정규화를 적용하여 벡터를 정규화
-embeddings_np = normalize(embeddings_np, norm='l2')
-
-# 인덱스에 벡터 추가
-index.add(embeddings_np)
-
-# 5. FAISS 인덱스 및 메타데이터 파일 저장
+# FAISS 인덱스 및 메타데이터 저장 경로 설정
 base_dir = os.path.dirname(os.path.realpath(__file__))
-faiss_index_file = os.path.join(base_dir, "../FAISS/faiss_index_1000_cosine.bin")
-faiss.write_index(index, faiss_index_file)
-print(f"FAISS 인덱스를 '{faiss_index_file}' 파일로 저장했습니다.")
-
-metadata_file = os.path.join(base_dir, "../FAISS/faiss_metadata_1000_cosine.pkl")
+metadata_file = os.path.join(base_dir, "../FAISS/Metadata/jhgan_metadata_1000.pkl")
 with open(metadata_file, "wb") as f:
     pickle.dump(metadata, f)
 print(f"메타데이터를 '{metadata_file}' 파일로 저장했습니다.")
+
+# 4. FAISS 인덱스 생성 및 저장 (내적 방식)
+embedding_dim = len(embeddings[0])
+embeddings_np = np.array(embeddings).astype('float32')
+
+# 내적 방식
+index_dot_product = faiss.IndexFlatIP(embedding_dim)
+index_dot_product.add(embeddings_np)
+faiss_index_file_dot = os.path.join(base_dir, "../FAISS/Index/jhgan_dotProduct_index_1000.bin")
+faiss.write_index(index_dot_product, faiss_index_file_dot)
+print(f"내적 기반 FAISS 인덱스를 '{faiss_index_file_dot}' 파일로 저장했습니다.")
+
+# 코사인 유사도 방식 (벡터 정규화 후 내적 방식 활용)
+index_cosine = faiss.IndexFlatIP(embedding_dim)
+embeddings_cosine = normalize(embeddings_np, norm='l2')  # 정규화하여 코사인 유사도 계산
+index_cosine.add(embeddings_cosine)
+faiss_index_file_cosine = os.path.join(base_dir, "../FAISS/Index/jhgan_cosine_index_1000.bin")
+faiss.write_index(index_cosine, faiss_index_file_cosine)
+print(f"코사인 유사도 기반 FAISS 인덱스를 '{faiss_index_file_cosine}' 파일로 저장했습니다.")
+
+# 유클리드 거리 방식
+index_euclidean = faiss.IndexFlatL2(embedding_dim)
+index_euclidean.add(embeddings_np)
+faiss_index_file_euclidean = os.path.join(base_dir, "../FAISS/Index/jhgan_euclidean_index_1000.bin")
+faiss.write_index(index_euclidean, faiss_index_file_euclidean)
+print(f"유클리드 거리 기반 FAISS 인덱스를 '{faiss_index_file_euclidean}' 파일로 저장했습니다.")
