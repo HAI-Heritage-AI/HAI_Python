@@ -1,5 +1,4 @@
 
-
 import os
 from datetime import datetime, timedelta
 from fastapi import FastAPI, HTTPException
@@ -26,7 +25,7 @@ class TravelRequest(BaseModel):
     start_date: str
     end_date: str
 
-@app.post("/create-travel-plan")
+@app.post("/create_travel_plan")
 async def create_travel_plan(travel_request: TravelRequest):
     try:
         # API 키 설정
