@@ -19,6 +19,7 @@ try:
     # 2. 테이블 존재 여부 확인 후 생성 (기존에 테이블이 없다면 생성)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS national_heritage (
+            id SERIAL PRIMARY KEY,  -- 기본 키로 사용할 id 컬럼 추가
             ccbaAsno NUMERIC,
             ccbaKdcd INTEGER,
             ccbaCtcd VARCHAR(10),
