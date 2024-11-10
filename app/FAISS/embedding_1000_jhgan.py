@@ -8,7 +8,7 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 from sklearn.preprocessing import normalize
 
-# 1. PostgreSQL에서 1000개의 데이터 가져오기
+# 1. PostgreSQL에서 데이터 가져오기
 try:
     conn = psycopg2.connect(
         host="localhost",
@@ -17,7 +17,7 @@ try:
         password="iam@123"
     )
     cursor = conn.cursor()
-    cursor.execute("SELECT ccbaAsno, content FROM national_heritage LIMIT 1000")  # 1000개의 데이터 가져오기
+    cursor.execute("SELECT id, content FROM national_heritage LIMIT 1000")  # 1000개의 데이터 가져오기
     rows = cursor.fetchall()
     conn.close()
 except Exception as e:
@@ -25,7 +25,7 @@ except Exception as e:
     exit()
 
 # 2. 모델 및 토크나이저 로드
-model = SentenceTransformer('jhgan/ko-sroberta-multitask')  # 모델을 jhgan/ko-sroberta-multitask로 변경
+model = SentenceTransformer('jhgan/ko-sroberta-multitask')
 embeddings = []
 metadata = []
 
@@ -35,7 +35,7 @@ stride = 256
 context_overlap = 2  # 문맥 보존을 위해 중첩할 문장 수
 
 for row in rows:
-    original_id, text = row
+    primary_id, text = row
 
     # 문장 단위로 분리 (KSS 사용)
     sentences = kss.split_sentences(text)
@@ -43,9 +43,7 @@ for row in rows:
     # 각 문장에서 구두점 제거
     processed_sentences = [re.sub(r'[\.,!?]', '', sentence) for sentence in sentences]
 
-    current_text = ""
     segment_id = 0
-
     i = 0
     while i < len(processed_sentences):
         # 현재 슬라이딩 윈도우 범위의 문장들
@@ -64,9 +62,9 @@ for row in rows:
         embeddings.append(embedding)
 
         metadata_entry = {
-            "original_id": original_id,
-            "segment_id": segment_id,
-            "text_segment": current_text
+            "primary_id": primary_id,         # PostgreSQL의 고유 식별자
+            "segment_id": segment_id,         # 슬라이딩 윈도우 구간
+            "text_segment": current_text      # 텍스트 세그먼트
         }
         metadata.append(metadata_entry)
         segment_id += 1
@@ -76,7 +74,7 @@ for row in rows:
 
 # FAISS 인덱스 및 메타데이터 저장 경로 설정
 base_dir = os.path.dirname(os.path.realpath(__file__))
-metadata_file = os.path.join(base_dir, "../FAISS/Metadata/jhgan_metadata_1000.pkl")
+metadata_file = os.path.join(base_dir, "../FAISS/Metadata/jhgan_metadata.pkl")
 with open(metadata_file, "wb") as f:
     pickle.dump(metadata, f)
 print(f"메타데이터를 '{metadata_file}' 파일로 저장했습니다.")
@@ -88,7 +86,7 @@ embeddings_np = np.array(embeddings).astype('float32')
 # 내적 방식
 index_dot_product = faiss.IndexFlatIP(embedding_dim)
 index_dot_product.add(embeddings_np)
-faiss_index_file_dot = os.path.join(base_dir, "../FAISS/Index/jhgan_dotProduct_index_1000.bin")
+faiss_index_file_dot = os.path.join(base_dir, "../FAISS/Index/jhgan_dotProduct_index.bin")
 faiss.write_index(index_dot_product, faiss_index_file_dot)
 print(f"내적 기반 FAISS 인덱스를 '{faiss_index_file_dot}' 파일로 저장했습니다.")
 
@@ -96,13 +94,13 @@ print(f"내적 기반 FAISS 인덱스를 '{faiss_index_file_dot}' 파일로 저�
 index_cosine = faiss.IndexFlatIP(embedding_dim)
 embeddings_cosine = normalize(embeddings_np, norm='l2')  # 정규화하여 코사인 유사도 계산
 index_cosine.add(embeddings_cosine)
-faiss_index_file_cosine = os.path.join(base_dir, "../FAISS/Index/jhgan_cosine_index_1000.bin")
+faiss_index_file_cosine = os.path.join(base_dir, "../FAISS/Index/jhgan_cosine_index.bin")
 faiss.write_index(index_cosine, faiss_index_file_cosine)
 print(f"코사인 유사도 기반 FAISS 인덱스를 '{faiss_index_file_cosine}' 파일로 저장했습니다.")
 
 # 유클리드 거리 방식
 index_euclidean = faiss.IndexFlatL2(embedding_dim)
 index_euclidean.add(embeddings_np)
-faiss_index_file_euclidean = os.path.join(base_dir, "../FAISS/Index/jhgan_euclidean_index_1000.bin")
+faiss_index_file_euclidean = os.path.join(base_dir, "../FAISS/Index/jhgan_euclidean_index.bin")
 faiss.write_index(index_euclidean, faiss_index_file_euclidean)
 print(f"유클리드 거리 기반 FAISS 인덱스를 '{faiss_index_file_euclidean}' 파일로 저장했습니다.")
