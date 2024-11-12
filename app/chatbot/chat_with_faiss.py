@@ -73,7 +73,7 @@ def generate_rag_answer(input_text: str, context: str) -> str:
     return response_text
 
 # 코사인 유사도 기반 FAISS 인덱스에서 가장 유사한 문서 검색 함수
-def search_faiss_index(query: str, top_k: int = 1, similarity_threshold: float = 0.5) -> dict:
+def search_faiss_index(query: str, top_k: int = 5, similarity_threshold: float = 10) -> dict:
     # 사용자 질문의 임베딩 생성
     query_embedding = embedding_model.encode(query).astype("float32").reshape(1, -1)
     distances, indices_found = index.search(query_embedding, top_k)
@@ -149,7 +149,7 @@ def process_chat(input_text: str) -> str:
 
 # 디버깅 용도 - 사용자 입력과 모델 응답 출력
 if __name__ == "__main__":
-    user_input = "경복궁이 어떻게 만들어졌어?"
+    user_input = "태조 이성계 어진은 어디에 있어?"
     print("디버깅 모드에서 사용자 입력 처리 중")
     print("Input from User:", user_input)
     print("\nResponses:\n", process_chat(user_input))

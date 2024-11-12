@@ -15,7 +15,7 @@ embedding_paths = {
 
 # 2. SentenceTransformer 모델 로드 및 질문 설정
 model = SentenceTransformer('jhgan/ko-sroberta-multitask')  # 모델을 jhgan/ko-sroberta-multitask로 변경
-user_question = "경복궁이 어떻게 만들어졌어?"  # 사용자의 임시 질문
+user_question = "태조 이성계 어진"  # 사용자의 임시 질문
 embedding = model.encode(user_question).astype('float32').reshape(1, -1)
 
 # 3. 검색 함수 정의
@@ -44,14 +44,16 @@ def search_faiss_index(index_file, metadata_file, embedding, normalize_embedding
     # 유사도 검색
     D, I = index.search(embedding, k=5)
     print(f"가장 유사한 벡터들의 인덱스: {I}")
-    print(f"각 유사한 벡터와의 유사도: {D}")
+    print(f"각 유사한 벡터와의 유사도/거리: {D}")
 
     # 검색 결과와 메타데이터 매핑
-    for idx in I[0]:
+    for i, idx in enumerate(I[0]):
         if idx < len(metadata):
             data = metadata[idx]
+            distance = D[0][i]  # 각 문서와의 거리 값
             if isinstance(data, dict):
-                print(f"원본 데이터 ID: {data['original_id']}, 세그먼트 번호: {data['segment_id']}, 텍스트 세그먼트: {data['text_segment']}")
+                print(f"원본 데이터 ID: {data['original_id']}, 세그먼트 번호: {data['segment_id']}, "
+                      f"텍스트 세그먼트: {data['text_segment']}, 거리: {distance}")
             else:
                 print(f"인덱스 {idx}의 메타데이터 형식이 잘못되었습니다. 데이터: {data}")
         else:
