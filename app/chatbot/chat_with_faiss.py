@@ -41,11 +41,47 @@ except Exception as e:
 memory = ConversationBufferMemory(memory_key="chat_history")
 
 # PromptTemplate 정의
-prompt_template = """사용자의 질문과 관련된 정보를 바탕으로 간단하고 정확한 답변을 제공해줘.
+prompt_template = """
+# 사용자의 페르소나
+'''한국 문화유산에 대해 관심이 많은 사람이며, 문화유산에 대해 잘 모르는 사람.'''
 
-질문: {input}
-추가 정보: {context}
-이전 대화 히스토리: {chat_history}
+# AI(화자)
+
+## 페르소나
+'''
+수십 년 경력의 문화유산 해설사로서, 문화유산에 대해 궁금한 점이 많은 사람들에게 양질의 정보를 제공하고자 합니다.
+답변은 300토큰 이내로 답변해야 합니다.
+'''
+
+## 임무 
+''' 
+답변은 300토큰 이내로 답변해야 합니다.
+사용자의 질문에 대해서 양질의 정보를 제공하고, 자연스럽고 인간적인 방식으로 답변을 드리며, 편견에 의존하지 않고, 단계별로 사고해 대답합니다.
+사용자의 질문이 모호하거나 정보가 부족할 경우, 충분한 정보를 얻기 위해 역질문을 할 수 있습니다. 
+답변 이후에 추가로 궁금한 점이 있는지 물어보아, 대화의 연속성을 유도합니다.
+항상 이전 대화 히스토리를 고려하여 이전 대화와 연결성 있는 답변을 생성합니다.
+좋은 답변을 할 경우 팁을 받을 수 있습니다.
+목표를 달성하지 못할 경우, 벌금이 부과될 수 있습니다.
+'''
+
+## 사용자 참여 유도: 
+- 맥락 관련 요청: 기존 대화 흐름을 고려해 자연스럽게 응답합니다.
+
+# 사용자의 질문
+'''
+{input}
+'''
+
+# 추가 정보d
+''' 
+{context}
+'''
+
+# 이전 대화 히스토리
+'''
+{chat_history}
+'''
+
 답변:"""
 
 prompt = PromptTemplate(input_variables=["input", "context", "chat_history"], template=prompt_template)
@@ -94,7 +130,7 @@ def search_faiss_index(query: str, top_k: int = 5, similarity_threshold: float =
 
 # 챗봇 함수 정의
 def process_chat(input_text: str) -> str:
-    print(f"process_chat 함수가 호출되었습니다. 입력: {input_text}")
+    # print(f"process_chat 함수가 호출되었습니다. 입력: {input_text}")
 
     # 유사한 문서 검색 및 메타데이터 추출
     best_result = search_faiss_index(input_text)
@@ -119,37 +155,26 @@ def process_chat(input_text: str) -> str:
         return response_text
     
     context = best_result.get("text_segment", "")
-    print(f"유사한 문서 검색 결과: {context[:100]}...")
+    # print(f"유사한 문서 검색 결과: {context[:100]}...")
 
     # RAG 방식으로 응답 생성
     rag_answer = generate_rag_answer(input_text, context)
-    print(f"생성된 RAG 응답: {rag_answer}")
-    
-    # 현재 대화 히스토리 출력 (로그에 출력)
-    print("=== 현재 대화 히스토리 ===")
-    for entry in memory.buffer:
-        # entry가 dict인지 확인 후 출력
-        if isinstance(entry, dict) and "input" in entry and "output" in entry:
-            print(f"User: {entry['input']}")
-            print(f"AI: {entry['output']}")
-        else:
-            print(f"예상하지 못한 형식의 히스토리 항목: {entry}")
-    print("=======================")
+    # print(f"생성된 RAG 응답: {rag_answer}")
     
     # FastAPI 응답에 히스토리 포함
     history_output = "\n".join([f"User: {entry.get('input', 'N/A')} | AI: {entry.get('output', 'N/A')}" for entry in memory.buffer if isinstance(entry, dict)])
     
     # 결과 출력
-    output = f"[코사인 방식 RAG 응답]\n{rag_answer}\n"
+    output = f"{rag_answer}"
     output += f"(가장 유사한 문서 - 원본 ID: {best_result.get('original_id', 'N/A')}, 세그먼트 ID: {best_result.get('segment_id', 'N/A')}, 거리: {best_result.get('distance', 'N/A')})\n"
-    output += f"컨텐츠: {context[:150]}...\n\n"
-    output += f"=== 현재 대화 히스토리 ===\n{history_output}\n=======================\n"
-    print("process_chat 결과 출력 완료")
+    # output += f"컨텐츠: {context[:150]}...\n\n"
+    # output += f"=== 현재 대화 히스토리 ===\n{history_output}\n=======================\n"
+    # print("process_chat 결과 출력 완료")
     return output
 
 # 디버깅 용도 - 사용자 입력과 모델 응답 출력
 if __name__ == "__main__":
-    user_input = "태조 이성계 어진은 어디에 있어?"
+    user_input = "현재 서울에 남아 있는 가장 오래된 목조 건물은 언제 완성되었나요?"
     print("디버깅 모드에서 사용자 입력 처리 중")
     print("Input from User:", user_input)
     print("\nResponses:\n", process_chat(user_input))

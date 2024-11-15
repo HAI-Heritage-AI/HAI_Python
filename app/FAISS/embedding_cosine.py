@@ -18,7 +18,7 @@ try:
         password="iam@123"
     )
     cursor = conn.cursor()
-    cursor.execute("SELECT ccbaAsno, content FROM national_heritage")  # 1000개의 데이터 가져오기
+    cursor.execute("SELECT ccbaAsno, content FROM national_heritage")  # 데이터 전부 가져오기
     rows = cursor.fetchall()
     conn.close()
 except Exception as e:
