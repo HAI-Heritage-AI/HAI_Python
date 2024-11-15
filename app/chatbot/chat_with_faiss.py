@@ -9,10 +9,7 @@ from openai import OpenAI
 from langchain_core.prompts import PromptTemplate
 from langchain.memory import ConversationBufferMemory
 
-
-# .env 파일 로드
-env_path = os.path.join(os.path.dirname(__file__), 'env')
-load_dotenv(dotenv_path=env_path)
+load_dotenv()
 
 # OpenAI 클라이언트 설정
 client = OpenAI(
