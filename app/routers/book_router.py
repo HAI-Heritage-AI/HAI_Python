@@ -55,17 +55,19 @@ def filter_heritage(category: str = None, region: str = None, period: str = None
         session.close()
 
 # 특정 유산 데이터 조회
-@book_router.get("/heritage/{heritage_id}")
-def get_heritage_by_id(heritage_id: int):
+@book_router.get("/heritage/{id}")
+def get_heritage_by_id(id: int):  # id를 int 타입으로 받음
     session = SessionLocal()
     try:
-        query = text("SELECT * FROM national_heritage WHERE ccbaAsno = :heritage_id")
-        result = session.execute(query, {"heritage_id": heritage_id}).fetchone()
+        # id 기준으로 데이터 가져오기
+        query = text("SELECT * FROM national_heritage WHERE id = :id")
+        result = session.execute(query, {"id": id}).fetchone()
         if result:
-            return dict(result)
+            return dict(result._mapping)  # 결과 매핑 후 반환
         else:
             return {"error": "Heritage not found"}
     except SQLAlchemyError as e:
         return {"error": str(e)}
     finally:
         session.close()
+
