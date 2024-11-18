@@ -30,9 +30,9 @@ def read_metadata(file_path):
 def find_text_segment_nan(metadata_df):
     # 여러 가지 조건을 추가하여 text_segment가 NaN인 경우를 찾습니다.
     nan_rows = metadata_df[
-        metadata_df['text_segment'].isna() |                # NaN으로 판별되는 경우
-        (metadata_df['text_segment'] == '') |               # 빈 문자열인 경우
-        (metadata_df['text_segment'].str.lower() == 'nan')  # 'NaN'이 문자열로 저장된 경우
+        metadata_df['내용'].isna() |                # NaN으로 판별되는 경우
+        (metadata_df['내용'] == '') |               # 빈 문자열인 경우
+        (metadata_df['내용'].str.lower() == 'nan')  # 'NaN'이 문자열로 저장된 경우
     ]
     print("text_segment의 내용이 NaN인 행들:")
     print(nan_rows)
@@ -43,5 +43,8 @@ if __name__ == "__main__":
     metadata_df = read_metadata(file_path)
     
     if metadata_df is not None:
-        print(metadata_df.head(10))
+        print(metadata_df.head())
+        print(metadata_df.loc[0, '내용'])
         find_text_segment_nan(metadata_df)
+        non_zero_segments = metadata_df[metadata_df['segment_id'] != 0]
+        print(non_zero_segments)
