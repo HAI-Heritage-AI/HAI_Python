@@ -9,7 +9,9 @@ engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # 라우터 생성
-book_router = APIRouter()
+book_router = APIRouter(
+    tags=["도감"]
+)
 
 # 모든 유산 데이터 조회
 @book_router.get("/heritage")

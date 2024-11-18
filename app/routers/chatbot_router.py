@@ -2,7 +2,9 @@
 from fastapi import APIRouter, Request
 from app.chatbot.chat_with_faiss import process_chat
 
-chatbot_router = APIRouter()
+chatbot_router = APIRouter(
+    tags=["챗봇"]
+)
 
 @chatbot_router.post("/chatbot")
 async def chatbot_endpoint(request: Request):

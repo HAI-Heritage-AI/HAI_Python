@@ -18,7 +18,7 @@ Base = declarative_base()
 # JWT 설정
 SECRET_KEY = "your_secret_key"  # 실제 서비스에선 강력한 비밀 키 사용
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 # 비밀번호 해싱
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -77,7 +77,9 @@ def get_db():
         db.close()
 
 # 라우터 생성
-auth_router = APIRouter()
+auth_router = APIRouter(
+    tags=["로그인"]
+)
 
 # 회원가입 엔드포인트
 @auth_router.post("/register")

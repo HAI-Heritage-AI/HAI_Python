@@ -3,6 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.routers.chatbot_router import chatbot_router
 from app.routers.book_router import book_router
 from app.routers.auth_router import auth_router 
+from app.routers.plan_router import plan_router
+from app.routers.chat_agent_router import chat_agent_router
 
 app = FastAPI()
 
@@ -19,7 +21,9 @@ app.add_middleware(
 app.include_router(chatbot_router, prefix="/api/chatbot")
 app.include_router(book_router, prefix="/api/book")
 app.include_router(auth_router, prefix="/api/auth")  
+app.include_router(plan_router, prefix="/api/plan")
+app.include_router(chat_agent_router, prefix="/api/chat")
 
 @app.get("/")
 async def read_root():
-    return {"message": "Hello, FastAPI!"}
+    return {"message": "API 서버가 정상적으로 실행 중입니다."}
