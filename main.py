@@ -14,7 +14,7 @@ app.add_middleware(
     allow_headers=[""],
 )
 
-/api/chatbot 라우터 등록
+# /api/chatbot 라우터 등록
 app.include_router(chatbot_router, prefix="/api")
 
 @app.get("/")
