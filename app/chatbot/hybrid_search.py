@@ -1,3 +1,4 @@
+from eunjeon import Mecab
 import faiss
 import pickle
 import numpy as np
@@ -6,6 +7,9 @@ from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 import os
 import pandas as pd
+
+# Mecab 형태소 분석기 초기화
+mecab = Mecab()
 
 # 1. 메타데이터 및 FAISS 인덱스 경로
 metadata_path = "../FAISS/Metadata/jhgan_metadata.pkl"
@@ -26,9 +30,9 @@ with open(metadata_path, "rb") as f:
 print("메타데이터의 내용 필드 추출 중...")
 documents = [entry["내용"] for entry in metadata]
 
-# 3. 공백 기반 토큰화
-print("내용을 공백 기준으로 토큰화 중...")
-tokenized_documents = [doc.split(" ") for doc in tqdm(documents, desc="Tokenizing Content")]
+# 3. Mecab 기반 토큰화
+print("Mecab으로 문서 토큰화 중...")
+tokenized_documents = [mecab.morphs(doc) for doc in tqdm(documents, desc="Tokenizing Content")]
 
 # 4. BM25 인덱스 생성
 print("BM25 인덱스 생성 중...")
@@ -62,9 +66,9 @@ def max_normalize(scores):
 # 7. 키워드 서치 구현
 def keyword_search(query, k=3):
     """
-    BM25를 사용한 키워드 서치.
+    Mecab으로 토큰화된 쿼리를 기반으로 BM25를 사용한 키워드 서치.
     """
-    query_tokens = query.split(" ")
+    query_tokens = mecab.morphs(query)  # Mecab으로 쿼리 토큰화
     bm25_scores = bm25.get_scores(query_tokens)
     sorted_indices = np.argsort(-bm25_scores)[:k]
     results = [(documents[i], metadata[i], bm25_scores[i]) for i in sorted_indices]
@@ -85,7 +89,7 @@ def hybrid_search(query, k=3, alpha=0.5, normalization_method="min_max"):
     """
     다양한 정규화를 선택하여 하이브리드 서치를 수행합니다.
     """
-    query_tokens = query.split(" ")
+    query_tokens = mecab.morphs(query)  # Mecab으로 쿼리 토큰화
     bm25_scores = bm25.get_scores(query_tokens)
 
     query_embedding = model.encode([query], normalize_embeddings=True)
@@ -146,7 +150,7 @@ print("SentenceTransformer 모델 로드 중...")
 model = SentenceTransformer('jhgan/ko-sroberta-multitask')
 
 # 키워드 서치 결과
-print("\n[키워드 서치 결과]")
+print("\n[키워드 서치 결과] (Mecab 기반)")
 keyword_results = keyword_search(query, k=top_k)
 for rank, (doc, meta, score) in enumerate(keyword_results, 1):
     print(f"{rank}. 내용: {doc[:50]}... | 점수: {score:.4f}")
@@ -162,7 +166,7 @@ print("\n하이브리드 서치 결과 계산 중...")
 df_hybrid_results = run_hybrid_search_by_alpha(query, k=top_k)
 
 # 결과 출력
-print("\n하이브리드 서치 결과 DataFrame:")
+print("\n하이브리드 서치 결과 DataFrame: (상위 20개)")
 print(df_hybrid_results.head(20))  # 상위 20개만 출력
 
 # 결과 저장
