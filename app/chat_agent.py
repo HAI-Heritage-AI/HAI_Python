@@ -13,7 +13,7 @@ class TravelChatAgent:
         self.current_travel_plan = None
         self.destination = None
         self.travel_style = None
-        self.user_info = None  # 추가
+        self.user_info = None  # 사용자 정보 추가
         
         self.llm = ChatOpenAI(
             api_key=os.getenv("OPENAI_API_KEY"),
@@ -30,12 +30,13 @@ class TravelChatAgent:
         }
 
     def set_user_info(self, user_info: dict):
-        """여행자 정보 설정 - 수정"""
+        """여행자 정보 설정"""
         self.user_info = user_info
         self.destination = user_info.get('destination')
         self.travel_style = user_info.get('style')
-        
-        # 여행 계획 생성
+        self.current_travel_plan = user_info  # 여행 계획을 최신으로 설정
+
+        # 여행 계획 생성 (옵션: 처음 생성이 아닐 때는 업데이트)
         if not self.current_travel_plan:
             try:
                 result = plan_travel(self.user_info)
@@ -185,7 +186,7 @@ class TravelChatAgent:
         중요: 반드시 {self.destination} 지역의 정보만 추천해주세요.
         다른 도시의 정보는 추천하지 마세요.
         
-        여행 계획: {context}
+        여행 계획: {context if context else json.dumps(self.current_travel_plan)}
         """
 
         messages = [
@@ -208,7 +209,7 @@ class TravelChatAgent:
         
         # GPT 응답 생성
         response = await self.llm.agenerate([messages])
-        answer = response.generations[0][0].text
+        answer = response.generations[0][0].text.strip()
         
         # 대화 기록 저장
         self.chat_history.append({"role": "user", "content": question})
