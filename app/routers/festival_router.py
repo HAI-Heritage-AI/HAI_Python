@@ -15,7 +15,9 @@ except Exception as e:
     raise HTTPException(status_code=500, detail=f"데이터를 로드하는 중 오류가 발생했습니다: {e}")
 
 # FastAPI Router 생성
-festival_router = APIRouter()
+festival_router = APIRouter(
+        tags=["축제"]
+)
 
 # 축제 데이터에서 start_date를 datetime으로 변환할 때 수정
 @festival_router.get("/")
