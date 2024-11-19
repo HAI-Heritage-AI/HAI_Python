@@ -157,6 +157,11 @@ def process_chat(input_text: str) -> str:
     best_results = hybrid_search(input_text, k=3)
     context = "\n".join([result.get("내용", "") for result in best_results])
     
+    # 하이브리드 서치 결과 출력
+    print("하이브리드 서치 결과:")
+    for idx, result in enumerate(best_results, 1):
+        print(f"[{idx}] {result}")
+
     rag_answer = generate_rag_answer(input_text, context)
     end_time = time.time()  # 종료 시간 기록
     print(f"process_chat 함수 실행 시간: {end_time - start_time:.2f}초")  # 실행 시간 출력
@@ -164,7 +169,7 @@ def process_chat(input_text: str) -> str:
 
 # 디버깅 용도 - 사용자 입력과 모델 응답 출력
 if __name__ == "__main__":
-    user_input = "서울의 유명한 문화재 알려줘"
+    user_input = "우리나라에서 가장 오래된 문화유산을 알려줘"
     print("디버깅 모드에서 사용자 입력 처리 중")
     print("Input from User:", user_input)
     print("\nResponses:\n", process_chat(user_input))
