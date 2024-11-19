@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field
 from typing import Optional
 from enum import Enum
 from app.plan_agent import plan_travel, calculate_trip_days  # 외부 함수 가져오기
+from app.agents import travel_chat_agent
 import httpx  # API 호출을 위한 httpx 사용
 from datetime import datetime
 import logging
@@ -124,6 +125,9 @@ async def generate_travel_plan(request: TravelRequest):
         start_date_str = request.startDate.strftime("%Y-%m-%d")
         end_date_str = request.endDate.strftime("%Y-%m-%d")
 
+        # TravelChatAgent에 최신 여행 계획 설정
+        travel_chat_agent.set_user_info(user_info)
+        
         # 축제 데이터 가져오기
         async with httpx.AsyncClient() as client:
             festival_response = await client.get(
