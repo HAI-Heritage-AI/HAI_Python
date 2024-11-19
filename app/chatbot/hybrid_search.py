@@ -37,47 +37,118 @@ bm25 = BM25Okapi(tokenized_documents)
 print("기존 FAISS 인덱스 로드 중...")
 faiss_index = faiss.read_index(faiss_index_path)
 
-# 6. 하이브리드 서치 구현
-def hybrid_search(query, k=3, alpha=0.5):
+# 6. 정규화 함수들
+def min_max_normalize(scores):
     """
-    하이브리드 서치를 수행하는 함수
+    Min-Max 정규화를 수행합니다.
+    :param scores: 정규화할 점수 배열
+    :return: Min-Max 정규화된 점수 배열
+    """
+    min_score = np.min(scores)
+    max_score = np.max(scores)
+    if max_score == min_score:
+        return np.ones_like(scores)
+    return (scores - min_score) / (max_score - min_score)
+
+def z_score_normalize(scores):
+    """
+    z-score 정규화를 수행합니다.
+    :param scores: 정규화할 점수 배열
+    :return: z-score 정규화된 점수 배열
+    """
+    mean = np.mean(scores)
+    std = np.std(scores)
+    if std == 0:
+        return np.zeros_like(scores)
+    return (scores - mean) / std
+
+def max_normalize(scores):
+    """
+    Max 정규화를 수행합니다.
+    :param scores: 정규화할 점수 배열
+    :return: Max 정규화된 점수 배열
+    """
+    max_score = np.max(scores)
+    if max_score == 0:
+        return np.zeros_like(scores)
+    return scores / max_score
+
+# 7. 하이브리드 서치 구현
+def hybrid_search(query, k=3, alpha=0.5, normalization_method="min_max"):
+    """
+    다양한 정규화를 선택하여 하이브리드 서치를 수행합니다.
     :param query: 검색 질의
     :param k: 반환할 결과 개수
     :param alpha: BM25와 FAISS 점수의 가중치 (0 ~ 1)
+    :param normalization_method: "min_max", "z_score", "max" 중 선택
     :return: 정렬된 검색 결과 리스트
     """
     # (1) BM25 점수 계산
     print("BM25 점수 계산 중...")
-    query_tokens = query.split(" ")  # 공백 기반 토큰화
-    bm25_scores = bm25.get_scores(query_tokens)  # BM25 점수 배열
+    query_tokens = query.split(" ")
+    bm25_scores = bm25.get_scores(query_tokens)
 
     # (2) FAISS 검색 수행
     print("FAISS 검색 수행 중...")
     query_embedding = model.encode([query], normalize_embeddings=True)
     faiss_scores, faiss_indices = faiss_index.search(query_embedding, len(documents))
+    faiss_scores = faiss_scores[0]
 
-    # (3) 점수 결합
+    # (3) 점수 정규화
+    if normalization_method == "min_max":
+        print("Min-Max 정규화 적용 중...")
+        bm25_scores = min_max_normalize(bm25_scores)
+        faiss_scores = min_max_normalize(faiss_scores)
+    elif normalization_method == "z_score":
+        print("z-score 정규화 적용 중...")
+        bm25_scores = z_score_normalize(bm25_scores)
+        faiss_scores = z_score_normalize(faiss_scores)
+    elif normalization_method == "max":
+        print("Max 정규화 적용 중...")
+        bm25_scores = max_normalize(bm25_scores)
+        faiss_scores = max_normalize(faiss_scores)
+    else:
+        raise ValueError("지원하지 않는 정규화 방법입니다. 'min_max', 'z_score', 'max' 중 선택하세요.")
+
+    # (4) 점수 결합
     print("BM25와 FAISS 점수 결합 중...")
-    faiss_scores = faiss_scores[0]  # FAISS의 유사도 점수 배열
     final_scores = alpha * bm25_scores + (1 - alpha) * faiss_scores
 
-    # (4) 결과 정렬
+    # (5) 결과 정렬
     print("검색 결과 정렬 중...")
-    sorted_indices = np.argsort(-final_scores)[:k]  # 점수 내림차순 정렬
+    sorted_indices = np.argsort(-final_scores)[:k]
     results = [(documents[i], metadata[i], final_scores[i]) for i in sorted_indices]
 
     return results
 
-# 7. 테스트: 사용자 질의 처리
+# 8. 테스트: 사용자 질의 처리
 query = "한국에서 가장 오래된 목조 건축물"
 print("하이브리드 서치 수행 중...")
 model = SentenceTransformer('jhgan/ko-sroberta-multitask')
-results = hybrid_search(query, k=3, alpha=0.3)  # BM25에 더 가중치를 준 검색
 
-# 8. 결과 출력
-print("Top Results:")
-for i, (doc, meta, score) in enumerate(results):
-    print(f"{i+1}. 내용: {doc}")
-    print(f"메타데이터: {meta}")
-    print(f"점수: {score:.4f}")
-    print()
+# Min-Max 정규화
+print("\n[Min-Max 정규화 결과]")
+results_min_max = hybrid_search(query, k=3, alpha=0.5, normalization_method="min_max")
+
+# z-score 정규화
+print("\n[z-score 정규화 결과]")
+results_z_score = hybrid_search(query, k=3, alpha=0.5, normalization_method="z_score")
+
+# Max 정규화
+print("\n[Max 정규화 결과]")
+results_max = hybrid_search(query, k=3, alpha=0.5, normalization_method="max")
+
+# 9. 결과 출력
+print("\n[비교 결과]")
+
+print("\nMin-Max 정규화:")
+for i, (doc, meta, score) in enumerate(results_min_max):
+    print(f"{i+1}. 내용: {doc} | 점수: {score:.4f}")
+
+print("\nz-score 정규화:")
+for i, (doc, meta, score) in enumerate(results_z_score):
+    print(f"{i+1}. 내용: {doc} | 점수: {score:.4f}")
+
+print("\nMax 정규화:")
+for i, (doc, meta, score) in enumerate(results_max):
+    print(f"{i+1}. 내용: {doc} | 점수: {score:.4f}")
