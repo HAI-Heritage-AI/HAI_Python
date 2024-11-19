@@ -29,7 +29,7 @@ except Exception as e:
     exit()
 
 # 2. 모델 및 토크나이저 로드
-model = SentenceTransformer(' /ko-sroberta-multitask')
+model = SentenceTransformer('jhgan/ko-sroberta-multitask')
 embeddings = []
 metadata = []
 
