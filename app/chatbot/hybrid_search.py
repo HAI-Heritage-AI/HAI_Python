@@ -30,9 +30,16 @@ with open(metadata_path, "rb") as f:
 print("메타데이터의 내용 필드 추출 중...")
 documents = [entry["내용"] for entry in metadata]
 
-# 3. Mecab 기반 토큰화
+# 3. Mecab 기반 토큰화 (허용된 품사만 남기고 나머지는 제외)
+allowed_pos_tags = ['NNP', 'NNG', 'NP', 'VV', 'VA', 'VCP', 'VCN', 'VSV', 'MAG', 'MAJ']
+
+def tokenize_with_mecab(text):
+    tokens = mecab.pos(text)  # 형태소 분석 후 품사 태깅
+    filtered_tokens = [word for word, pos in tokens if pos in allowed_pos_tags]  # 허용된 품사만 남기기
+    return filtered_tokens
+
 print("Mecab으로 문서 토큰화 중...")
-tokenized_documents = [mecab.morphs(doc) for doc in tqdm(documents, desc="Tokenizing Content")]
+tokenized_documents = [tokenize_with_mecab(doc) for doc in tqdm(documents, desc="Tokenizing Content")]
 
 # 4. BM25 인덱스 생성
 print("BM25 인덱스 생성 중...")
@@ -68,7 +75,7 @@ def keyword_search(query, k=3):
     """
     Mecab으로 토큰화된 쿼리를 기반으로 BM25를 사용한 키워드 서치.
     """
-    query_tokens = mecab.morphs(query)  # Mecab으로 쿼리 토큰화
+    query_tokens = tokenize_with_mecab(query)  # Mecab으로 쿼리 토큰화
     bm25_scores = bm25.get_scores(query_tokens)
     sorted_indices = np.argsort(-bm25_scores)[:k]
     results = [(documents[i], metadata[i], bm25_scores[i]) for i in sorted_indices]
@@ -89,7 +96,7 @@ def hybrid_search(query, k=3, alpha=0.5, normalization_method="min_max"):
     """
     다양한 정규화를 선택하여 하이브리드 서치를 수행합니다.
     """
-    query_tokens = mecab.morphs(query)  # Mecab으로 쿼리 토큰화
+    query_tokens = tokenize_with_mecab(query)  # Mecab으로 쿼리 토큰화
     bm25_scores = bm25.get_scores(query_tokens)
 
     query_embedding = model.encode([query], normalize_embeddings=True)
