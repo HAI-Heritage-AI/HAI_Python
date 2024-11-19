@@ -1,4 +1,4 @@
-import os
+import os 
 import pickle
 import numpy as np
 import faiss
@@ -11,6 +11,7 @@ from eunjeon import Mecab
 from rank_bm25 import BM25Okapi
 from tqdm import tqdm
 import pandas as pd
+import time
 
 load_dotenv()
 
@@ -29,6 +30,7 @@ mecab = Mecab()
 base_dir = os.path.dirname(os.path.realpath(__file__))
 index_file = os.path.join(base_dir, "../FAISS/Index/jhgan_cosine_index.bin")
 metadata_file = os.path.join(base_dir, "../FAISS/Metadata/jhgan_metadata.pkl")
+bm25_index_file = os.path.join(base_dir, "../FAISS/Metadata/bm25_index.pkl")
 
 # FAISS 인덱스 및 메타데이터 로드
 try:
@@ -40,11 +42,21 @@ except Exception as e:
     print(f"FAISS 인덱스 또는 메타데이터 로드 실패: {e}")
     exit()
 
-# BM25 인덱스 생성
-print("BM25 인덱스 생성 중...")
+# 문서 리스트 생성
 documents = [entry["내용"] for entry in metadata]
-tokenized_documents = [[word for word, pos in mecab.pos(doc) if pos in ['NNP', 'NNG', 'NP', 'VV', 'VA', 'VCP', 'VCN', 'VSV', 'MAG', 'MAJ']] for doc in documents]
-bm25 = BM25Okapi(tokenized_documents)
+
+# BM25 인덱스 로드 또는 생성
+if os.path.exists(bm25_index_file):
+    with open(bm25_index_file, "rb") as f:
+        bm25 = pickle.load(f)
+    print("BM25 인덱스 로드 성공")
+else:
+    print("BM25 인덱스 생성 중...")
+    tokenized_documents = [[word for word, pos in mecab.pos(doc) if pos in ['NNP', 'NNG', 'NP', 'VV', 'VA', 'VCP', 'VCN', 'VSV', 'MAG', 'MAJ']] for doc in documents]
+    bm25 = BM25Okapi(tokenized_documents)
+    with open(bm25_index_file, "wb") as f:
+        pickle.dump(bm25, f)
+    print("BM25 인덱스 생성 및 저장 성공")
 
 # LangChain 메모리 구성
 memory = ConversationBufferMemory(memory_key="chat_history")
@@ -141,15 +153,18 @@ def hybrid_search(query: str, k: int = 3, alpha: float = 0.5, normalization_meth
 
 # 챗봇 함수 정의
 def process_chat(input_text: str) -> str:
+    start_time = time.time()  # 시작 시간 기록
     best_results = hybrid_search(input_text, k=3)
     context = "\n".join([result.get("내용", "") for result in best_results])
     
     rag_answer = generate_rag_answer(input_text, context)
+    end_time = time.time()  # 종료 시간 기록
+    print(f"process_chat 함수 실행 시간: {end_time - start_time:.2f}초")  # 실행 시간 출력
     return rag_answer
 
 # 디버깅 용도 - 사용자 입력과 모델 응답 출력
 if __name__ == "__main__":
-    user_input = "아까 전 대답 얘기해줘"
+    user_input = "서울의 유명한 문화재 알려줘"
     print("디버깅 모드에서 사용자 입력 처리 중")
     print("Input from User:", user_input)
     print("\nResponses:\n", process_chat(user_input))
