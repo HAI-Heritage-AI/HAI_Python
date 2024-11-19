@@ -1,3 +1,4 @@
+
 from fastapi import APIRouter, Query, HTTPException
 from fastapi.responses import JSONResponse
 import json
@@ -25,11 +26,12 @@ async def get_festivals(
     """
     특정 목적지와 날짜 이후에 열리는 축제 목록을 반환합니다.
     """
-    try:
-        # 날짜를 datetime 형식으로 변환
-        start_date = datetime.strptime(start_date, "%Y-%m-%d")  # str -> datetime 변환
-    except ValueError:
-        raise HTTPException(status_code=400, detail="잘못된 날짜 형식입니다. YYYY-MM-DD 형식을 사용하세요.")
+    # 날짜를 문자열일 경우에만 datetime 형식으로 변환
+    if isinstance(start_date, str):
+        try:
+            start_date = datetime.strptime(start_date, "%Y-%m-%d")  # str -> datetime 변환
+        except ValueError:
+            raise HTTPException(status_code=400, detail="잘못된 날짜 형식입니다. YYYY-MM-DD 형식을 사용하세요.")
 
     # 목적지와 날짜로 필터링
     try:

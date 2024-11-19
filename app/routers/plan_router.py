@@ -5,6 +5,10 @@ from enum import Enum
 from app.plan_agent import plan_travel, calculate_trip_days  # 외부 함수 가져오기
 import httpx  # API 호출을 위한 httpx 사용
 from datetime import datetime
+import logging
+import json
+
+logging.basicConfig(level=logging.DEBUG)
 
 # APIRouter 인스턴스 생성
 plan_router = APIRouter(
@@ -95,6 +99,27 @@ async def generate_travel_plan(request: TravelRequest):
         # 여행 계획 생성
         travel_plan = plan_travel(user_info)
 
+        # travel_plan이 JSON 문자열인 경우 파싱하여 dict로 변환
+        if isinstance(travel_plan, str):
+            try:
+                travel_plan = json.loads(travel_plan)
+            except json.JSONDecodeError as e:
+                raise HTTPException(status_code=500, detail="여행 계획 데이터를 파싱하는 데 실패했습니다.")
+
+        # travel_plan이 dict 형태인지 검증
+        if not isinstance(travel_plan, dict):
+            raise HTTPException(status_code=500, detail="여행 계획 데이터가 올바른 형식이 아닙니다.")
+
+        # "result" 키가 포함된 경우 해당 데이터를 분리
+        if "result" in travel_plan:
+            travel_plan = travel_plan["result"]
+
+        # 각 Day의 값이 리스트(배열)인지 확인하고, 아니면 빈 리스트로 설정
+        for day, events in travel_plan.items():
+            if not isinstance(events, list):
+                logging.warning(f"Day '{day}'의 데이터가 배열이 아닙니다. 빈 배열로 설정합니다.")
+                travel_plan[day] = []
+
         # 여행 시작일과 종료일을 문자열로 변환
         start_date_str = request.startDate.strftime("%Y-%m-%d")
         end_date_str = request.endDate.strftime("%Y-%m-%d")
@@ -102,7 +127,7 @@ async def generate_travel_plan(request: TravelRequest):
         # 축제 데이터 가져오기
         async with httpx.AsyncClient() as client:
             festival_response = await client.get(
-                "http://localhost:8000/api/festival",
+                "http://localhost:8000/api/festival/",
                 params={"destination": request.destination, "start_date": start_date_str},
             )
             if festival_response.status_code != 200:
@@ -119,9 +144,13 @@ async def generate_travel_plan(request: TravelRequest):
             duration=user_info["duration"],
             festivals=festival_data,
         )
+
     except ValueError as ve:
+        logging.error(f"Unexpected error: {str(ve)}")
         raise HTTPException(status_code=400, detail=f"잘못된 요청입니다: {str(ve)}")
     except TypeError as te:
+        logging.error(f"Unexpected error: {str(te)}")
         raise HTTPException(status_code=400, detail=f"타입 오류가 발생했습니다: {str(te)}")
     except Exception as e:
+        logging.error(f"Unexpected error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"서버 오류가 발생했습니다: {str(e)}")
