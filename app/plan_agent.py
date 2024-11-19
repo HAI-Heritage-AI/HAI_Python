@@ -438,21 +438,21 @@ def create_tasks(agents, user_info):
                 "Day 1": [
                     {{
                         "time": "시간",
-                        "place1": {{
+                        "place": {{
                             "장소": "장소명",
                             "address": "주소"
                         }}
                     }},
                     {{
                         "time": "시간",
-                        "place1": {{
+                        "place": {{
                             "장소": "장소명",
                             "address": "주소"
                         }}
                     }},
                     {{
                         "time": "시간",
-                        "place1": {{
+                        "place": {{
                             "장소": "장소명",
                             "address": "주소"
                         }}

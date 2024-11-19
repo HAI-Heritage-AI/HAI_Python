@@ -31,7 +31,7 @@ chat_agent_router = APIRouter(
 latest_travel_plan = None  # 여행 계획이 필요하면 다른 API와 연결 가능
 
 # 채팅 API 엔드포인트
-@chat_agent_router.post("/chatagnet", response_model=ChatResponse)
+@chat_agent_router.post("/chatagent", response_model=ChatResponse)
 async def chat_with_agent(request: ChatRequest):
     """여행 관련 질문에 답변합니다."""
     try:
