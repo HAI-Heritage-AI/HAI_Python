@@ -169,7 +169,7 @@ def process_chat(input_text: str) -> str:
 
 # 디버깅 용도 - 사용자 입력과 모델 응답 출력
 if __name__ == "__main__":
-    user_input = "우리나라에서 가장 오래된 문화유산을 알려줘"
+    user_input = "화석정에 대해 이해하기 쉽게 알려줘 요약해서 알려줘"
     print("디버깅 모드에서 사용자 입력 처리 중")
     print("Input from User:", user_input)
     print("\nResponses:\n", process_chat(user_input))
