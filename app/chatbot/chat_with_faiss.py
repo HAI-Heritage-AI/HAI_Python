@@ -1,4 +1,4 @@
-# chat_with_faiss.py (수정됨)
+# chat_with_faiss.py
 import os
 import pickle
 import numpy as np
