@@ -92,7 +92,7 @@ def generate_rag_answer(input_text: str, context: str) -> str:
         response = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt_text}],
             model="gpt-3.5-turbo",
-            max_tokens=300,
+            max_tokens=400,
             temperature=0.3,
             top_p=0.95,
             n=1
@@ -138,7 +138,7 @@ def process_chat(input_text: str) -> str:
             response = client.chat.completions.create(
                 messages=[{"role": "user", "content": prompt_text}],
                 model="gpt-3.5-turbo",
-                max_tokens=300,
+                max_tokens=400,
                 temperature=0.3,
                 top_p=0.95,
                 n=1
@@ -163,8 +163,8 @@ def process_chat(input_text: str) -> str:
     
     # 결과 출력
     output = f"{rag_answer}"
-    output += f"(가장 유사한 문서 - 원본 ID: {best_result.get('original_id', 'N/A')}, 세그먼트 ID: {best_result.get('segment_id', 'N/A')}, 거리: {best_result.get('distance', 'N/A')})\n"
-    # output += f"컨텐츠: {context[:150]}...\n\n"
+    print(f"(가장 유사한 문서 - 원본 ID: {best_result.get('original_id', 'N/A')}, 세그먼트 ID: {best_result.get('segment_id', 'N/A')}, 거리: {best_result.get('distance', 'N/A')})\n")
+    print(f"컨텐츠: {context[:150]}...\n\n")
     # output += f"=== 현재 대화 히스토리 ===\n{history_output}\n=======================\n"
     # print("process_chat 결과 출력 완료")
     return output
