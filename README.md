@@ -37,3 +37,6 @@ conda env list
 
 ## 콘다 환경 삭제
 > conda remove --name "환경 이름" --all
+\
+\
+
