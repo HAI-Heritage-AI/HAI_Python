@@ -1,5 +1,4 @@
-# 메타데이터 읽기 코드
-
+# temp_ner.py
 import pandas as pd
 from transformers import AutoTokenizer, AutoModelForTokenClassification, pipeline
 

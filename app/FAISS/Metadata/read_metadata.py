@@ -1,5 +1,4 @@
-# 메타데이터 읽기 코드
-
+# read_metadate.py
 import pandas as pd
 
 def read_metadata(file_path):
