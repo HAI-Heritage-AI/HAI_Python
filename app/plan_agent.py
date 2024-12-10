@@ -9,6 +9,16 @@ from datetime import datetime
 import pandas as pd
 import unicodedata
 import re
+from functools import lru_cache  # lru_cache만 직접 import하는 것은 잘못된 방식입니다
+
+import logging
+
+# 로깅 설정
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # 환경변수 로딩 및 검사
 load_dotenv()
@@ -31,11 +41,14 @@ def get_csv_file_paths(destination: str) -> dict:
     주어진 목적지(destination)에 해당하는 여행지와 맛집 CSV 파일 경로를 반환합니다.
     """
     base_paths = {
-        'travel': os.path.join(TRAVEL_DATA_DIR, 'travel'),
-        'food': os.path.join(TRAVEL_DATA_DIR, 'food'),
+        # 'travel': os.path.join(TRAVEL_DATA_DIR, 'travel'),
+        # 'food': os.path.join(TRAVEL_DATA_DIR, 'food'),
+        'history': os.path.join(TRAVEL_DATA_DIR, 'history'),
+        
     }
-    
-    result = {'travel': None, 'food': None}
+    # result = {'travel': None, 'food': None, 'history': None}
+
+    result = {'history': None}
     for category, base_path in base_paths.items():
         if not os.path.exists(base_path):
             print(f"Error: '{base_path}' 경로가 존재하지 않습니다.")
@@ -58,24 +71,47 @@ def get_csv_file_paths(destination: str) -> dict:
 
 import pandas as pd
 
-def convert_csv_to_utf8(original_csv_path: str, temp_csv_path: str) -> None:
-    """
-    CSV 파일을 UTF-8로 변환하여 임시 파일로 저장합니다.
-    """
-    try:
-        # 파일을 'utf-8' 인코딩으로 시도해서 읽기
-        df = pd.read_csv(original_csv_path, encoding='utf-8')
-    except UnicodeDecodeError:
-        # 만약 'utf-8'로 읽기 실패하면 'euc-kr'로 시도
-        try:
-            df = pd.read_csv(original_csv_path, encoding='euc-kr')
-        except UnicodeDecodeError:
-            # 'euc-kr'도 실패하면 'latin1'로 시도
-            df = pd.read_csv(original_csv_path, encoding='latin1')
 
-    # UTF-8로 저장
-    df.to_csv(temp_csv_path, encoding='utf-8', index=False)
-    print(f"{original_csv_path} 파일을 UTF-8로 변환하여 {temp_csv_path}에 저장했습니다.")
+def load_csv_to_df(file_path: str) -> pd.DataFrame:
+    """CSV 파일을 DataFrame으로 안전하게 로드"""
+    try:
+        if isinstance(file_path, pd.DataFrame):  # 이미 DataFrame인 경우
+            return file_path
+        
+        if not file_path or not os.path.exists(file_path):
+            logger.warning(f"CSV 파일이 존재하지 않습니다: {file_path}")
+            return pd.DataFrame()
+
+        # 파일 읽기 시도
+        df = None
+        encodings = ['utf-8', 'euc-kr', 'cp949']
+        
+        for encoding in encodings:
+            try:
+                df = pd.read_csv(file_path, encoding=encoding)
+                logger.info(f"CSV 파일을 {encoding} 인코딩으로 성공적으로 로드했습니다")
+                break
+            except UnicodeDecodeError:
+                continue
+            except Exception as e:
+                logger.warning(f"{encoding} 인코딩으로 로드 실패: {str(e)}")
+                continue
+        
+        if df is None:
+            logger.error("모든 인코딩으로 CSV 파일 로드 실패")
+            return pd.DataFrame()
+            
+        # 데이터 확인 로깅
+        logger.info(f"로드된 CSV 파일 경로: {file_path}")
+        logger.info(f"데이터 샘플:\n{df.head()}")
+        logger.info(f"총 행 수: {len(df)}")
+        
+        return df
+
+    except Exception as e:
+        logger.error(f"CSV 파일 로드 중 예외 발생: {str(e)}")
+        return pd.DataFrame()
+
 
 def calculate_trip_days(start_date, end_date):
     """
@@ -122,6 +158,60 @@ def calculate_trip_days(start_date, end_date):
         print(f"예상치 못한 오류 발생: {e}")
         return (0, 0)
     
+
+class NaverBlogSearchTool(BaseTool):
+    """네이버 블로그 검색 도구"""
+    name: str = "Naver Blog Search"
+    description: str = "네이버 블로그에서 여행 정보와 실제 방문자 후기를 검색합니다."
+    client_id: str = ""
+    client_secret: str = ""
+    headers: dict = {}
+
+    def __init__(self):
+        super().__init__()
+        self.client_id = os.getenv("NAVER_CLIENT_ID")
+        self.client_secret = os.getenv("NAVER_CLIENT_SECRET")
+        self.headers = {
+            "X-Naver-Client-Id": self.client_id,
+            "X-Naver-Client-Secret": self.client_secret
+        }
+        # 캐시된 검색 메서드 초기화
+        self._cached_search = lru_cache(maxsize=100)(self._search)
+
+    def _search(self, query: str) -> str:
+        """실제 검색을 수행하는 내부 메서드"""
+        url = "https://openapi.naver.com/v1/search/blog"
+        full_query = f"{query} 여행 후기"
+        params = {
+            "query": full_query,
+            "display": 10,
+            "sort": "sim"
+        }
+        
+        response = requests.get(url, headers=self.headers, params=params)
+        
+        if response.status_code == 200:
+            items = response.json().get('items', [])
+            results = "📝 블로그 검색 결과:\n"
+            for item in items:
+                results += f"""
+제목: {item['title'].replace('<b>', '').replace('</b>', '')}
+내용: {item['description'].replace('<b>', '').replace('</b>', '')}
+링크: {item['link']}
+작성일: {item.get('postdate', '정보 없음')}
+-------------------"""
+            return results
+        return "검색 결과를 찾을 수 없습니다."
+
+    def _run(self, query: str) -> str:
+        """BaseTool 인터페이스를 구현하는 실행 메서드"""
+        try:
+            if isinstance(query, dict) and 'query' in query:
+                query = query['query']
+            return self._cached_search(query)
+        except Exception as e:
+            return f"검색 중 오류가 발생했습니다: {str(e)}"
+
 
 class KakaoLocalSearchTool(BaseTool):
     """카카오 로컬 API를 이용한 좌표 검색 도구"""
@@ -231,237 +321,220 @@ class NaverLocalSearchTool(BaseTool):
             print(f"검색 중 오류 발생: {e}")
             return json.dumps({"error": str(e)}, ensure_ascii=False)
 
+
 def create_travel_agents(llm, user_info):
-    # Serper Tool 초기화
+    # 도구 초기화
     search_tool = SerperDevTool()
-    
-    # 네이버 로컬 검색 도구 초기화 (카카오 좌표 변환 포함)
     local_tool = NaverLocalSearchTool()
+    blog_tool = NaverBlogSearchTool()
 
-    # 목적지에 해당하는 CSV 파일 경로 가져오기
+    
     destination = user_info["destination"]
+    detail_destination = user_info.get("detail_destination", "")
     style = user_info["style"]
-
+    age = user_info["age"]
+    
     csv_paths = get_csv_file_paths(destination)
 
-    if not csv_paths['travel'] and not csv_paths['food']:
-        print(f"{destination}에 해당하는 CSV 파일을 찾을 수 없습니다.")
-        return None, None, None, None
-
-
-    # DataFrame으로 직접 로드하여 메모리에서 처리
-    def load_csv_to_df(path):
-        try:
-            df = pd.read_csv(path, encoding='utf-8')
-        except UnicodeDecodeError:
-            try:
-                df = pd.read_csv(path, encoding='euc-kr')
-            except UnicodeDecodeError:
-                df = pd.read_csv(path, encoding='latin1')
-        
-        print(f"로드된 CSV 파일 경로: {path}")
-        print(f"데이터 샘플:\n{df.head()}")
-        print(f"총 행 수: {len(df)}")
     
-        csv_str = df.to_csv(index=False)
-        return csv_str
+    # CSV 도구 초기화
+    history_csv_tool = None
+    if csv_paths.get('history'):
+        try:
+            df = load_csv_to_df(csv_paths['history'])
+            if not df.empty:
+                # DataFrame을 문자열로 변환
+                csv_str = df.to_csv(index=False)
+                history_csv_tool = CSVSearchTool(csv=csv_str)
+        except Exception as e:
+            logger.error(f"History CSV 로드 실패: {str(e)}")
 
 
-    # 각 에이전트별 CSVSearchTool 초기화
-    travel_csv_tool = CSVSearchTool(csv=load_csv_to_df(csv_paths['travel']) if csv_paths['travel'] else None)
-    food_csv_tool = CSVSearchTool(csv=load_csv_to_df(csv_paths['food']) if csv_paths['food'] else None)
 
-    # 맞춤형 여행 조사 에이전트
-    personal_researcher = Agent(
-        role='맞춤형 여행 조사 에이전트',
-        goal=f'{user_info["age"]} {user_info["gender"]}의 맞춤형 여행지 추천',
-        backstory=f"""여행 전문가로서 {user_info['age']} {user_info['gender']}이(가) {user_info['companion']}와 
-                   함께하는 {user_info['style']} 스타일의 여행을 위한 최적의 장소들을 추천합니다.""",
+    # 1. 스타일별 관광지 분석 에이전트
+    style_configs = {
+        '국가유산': {
+            # 'tools': [CSVSearchTool(csv=load_csv_to_df(csv_paths['history'])) if csv_paths else None],
+            'tools': [history_csv_tool] if history_csv_tool else [search_tool],
+            'backstory': f'{destination}{detail_destination}의 역사문화 데이터를 분석하여 문화재, 박물관, 전시시설을 추천하는 전문가입니다.'
+        },
+        '휴양': {
+            # 'tools': [CSVSearchTool(csv=load_csv_to_df(csv_paths['travel'])) if csv_paths else None],
+            'tools': [history_csv_tool] if history_csv_tool else [search_tool],
+            'backstory': f'{destination}{detail_destination}의 관광 데이터를 분석하여 자연경관, 공원, 휴식 공간을 추천하는 전문가입니다.'
+        },
+        '액티비티': {
+            'tools': [search_tool],
+            'query': f"'{user_info['destination']} {user_info['detail_destination']} 체험 레저스포츠'",
+            'backstory': f'{destination}{detail_destination}의 체험형 관광지와 레저스포츠 시설을 추천하는 전문가입니다.'
+        },
+        'SNS감성': {
+            'tools': [blog_tool],
+            'query': f"'{user_info['destination']} {user_info['detail_destination']} 인스타 핫플 포토스팟'",
+            'backstory': f'{destination}{detail_destination}의 인스타그램 핫플레이스와 포토스팟을 추천하는 트렌드 전문가입니다.'
+        },
+        '식도락': {
+            'tools': [search_tool],
+            'query': f"'{user_info['destination']} {user_info['detail_destination']} 현지맛집, 식도락'",
+            'backstory': f'{destination}{detail_destination}의 맛집과 식도락 여행지를 추천하는 음식 전문가입니다.'
+        }
+    }
+
+    
+    
+    tourist_spot_researcher = Agent(
+        role=f'{style} 관광지 전문가',
+        goal=f'{destination} {detail_destination}의 {style} 특화 관광지 분석',
+        backstory=style_configs[style]['backstory'],
+        tools=style_configs[style]['tools'],
+        llm=llm,
+        verbose=True
+    )
+
+    # 2. 맛집 분석 에이전트 (구글 검색 기반)
+    restaurant_researcher = Agent(
+        role='맛집 분석 전문가',
+        goal=f'{destination} {detail_destination}의 tourist_spot_researcher 여행장소 근처 맛집 분석',
+        backstory=f'tourist_spot_researcher 여행장소 근처 맛집을 검색하고 분석하여 최적의 식당을 추천하는 전문가입니다.',
         tools=[search_tool],
         llm=llm,
         verbose=True
     )
 
-    # 1. 관광지 분석 Agent
-    tourist_spot_researcher = Agent(
-        role='Tourist Spot Analyst',
-        goal=f'{user_info["style"]} 스타일에 맞는 관광지 분석',
-        backstory=f'{destination}관광지 데이터를 분석하여 {user_info["style"]} 스타일에 적합한 장소를 추천하는 전문가입니다.',
-        tools=[CSVSearchTool(csv=load_csv_to_df(csv_paths['travel']))],
-
-        verbose=True
-    )
-
-
-    # 2. 맛집 분석 Agent
-    restaurant_researcher = Agent(
-        role='Restaurant Analyst',
-        goal='{destination}관광지 주변 맛집 분석',
-        backstory='{destination}관광지 주변의 맛집을 분석하여 적합한 식당을 추천하는 전문가입니다.',
-        tools=[CSVSearchTool(csv=load_csv_to_df(csv_paths['food']))],
-        verbose=True
-    )
-
-
-    # 일정 계획 에이전트
+    # 3. 일정 계획 에이전트
     itinerary_planner = Agent(
-        role='여행 일정 수립 에이전트',
-        goal='효율적인 여행 동선 계획',
-        backstory="""personal_task에서 추천된 {style} 장소들을 중심으로 {days}일간의 여행 일정을 계획해주세요.
-                    1시간 이내 이동 가능한 효율적인 동선을 설계하는 전문가입니다.""",
+        role='여행 일정 계획가',
+        goal='효율적인 여행 동선 설계',
+        backstory=f"""
+            {style} 스타일의 관광지와 맛집을 연계하여 {user_info['age']} {user_info['gender']}에게 
+            최적화된 일정을 계획하는 전문가입니다. 대중교통과 도보 이동을 고려하여 
+            30분 이내 이동 가능한 효율적인 동선을 설계합니다.
+        """,
         tools=[local_tool],
         llm=llm,
         verbose=True
     )
 
-    return personal_researcher, tourist_spot_researcher, restaurant_researcher, itinerary_planner
-
+    return tourist_spot_researcher, restaurant_researcher, itinerary_planner
 
 def create_tasks(agents, user_info):
-    personal_researcher, tourist_spot_researcher, restaurant_researcher, itinerary_planner = agents
-    destination = user_info['destination']
+    tourist_spot_researcher, restaurant_researcher, itinerary_planner = agents
+
     style = user_info['style'] 
     age = user_info['age'] 
-
-    search_queries = {
-        '국가유산': f"{destination} {age} 추천 유적지 문화재 박물관 명소",
-        '휴양': f"{destination} {age} 추천 힐링스팟 카페 휴식 산 공원 명소",
-        '액티비티': f"{destination} {age} 추천 액티비티 체험 관광 즐길거리",
-        '식도락': f"{destination} {age} 맛집 추천 현지맛집 유명식당",
-        'SNS감성': f"{destination} {age} 인스타 핫플레이스 감성카페 포토스팟"
-    }
+    destination = user_info['destination']
+    detail_destination = user_info['detail_destination']
     
-    travel_style_prompts = {
-        '국가유산': f"""
-            {destination}의 대표적인 국가유산와 역사 관광지를 찾아주세요.
-            - 유명 국가유산와 유적지
-            - 박물관과 전시관
-            - {user_info['companion']}와 함께 둘러보기 좋은 곳
-            - 관람 소요시간과 볼거리 포함
-        """,
-        
-        '휴양': f"""
-            {age}연령대가 {destination}의 힐링하기 좋은 장소들을 찾아주세요.
-            - 힐링 명소와 조용한 장소
-            - 경관이 좋은 카페와 휴식 공간
-            - 자연 경관이 아름다운 곳
-            - {user_info['companion']}와 편안한 시간을 보내기 좋은 곳
-        """,
-        
-        '액티비티': f"""
-            {age}연령대가 {destination}의 체험형 관광지와 액티비티를 찾아주세요.
-            - {user_info['age']} {user_info['gender']}의 체력 수준에 적합한 활동
-            - {user_info['companion']}와 함께 즐기기 좋은 체험
-            - 안전하고 초보자도 할 수 있는 활동
-            - 계절/날씨별 추천 활동
-        """,
-        
-        '식도락': f"""
-            {destination}의 맛집과 음식점을 찾아주세요.
-            - 현지 맛집과 유명 식당
-            - {user_info['companion']}와 식사하기 좋은 분위기의 장소
-            - 특별한 지역 음식과 대표 메뉴
-            - 가격대와 영업시간 정보
-        """,
-        
-        'SNS감성': f"""
-            {destination}의 인스타그램 핫플레이스를 찾아주세요.
-            - 인기 있는 포토스팟
-            - 뷰가 좋은 감성 카페
-            - {user_info['age']} {user_info['gender']}이 좋아할만한 트렌디한 장소
-            - 예쁜 사진을 찍을 수 있는 명소
-        """
-    }
-
-
-    
-    # search_query = f"{destination} {style}추천 {user_info['age']} {user_info['gender']} {user_info['companion']}"
-
-
-    personal_task = Task(
-        name="사용자 맞춤형 여행 조사",
-        description=f"""
-            Search Query: {search_queries[style]}
-
-            다음 프롬프트를보고 연령대 여행스타일 맞춤 장소 15개 리스트를 작성하세요.
-            {travel_style_prompts[style]}
+    style_task_configs = {
+        '국가유산': {
+            'query': f"'{user_info['destination']} {user_info['detail_destination']} 해당하는 문화재 박물관 역사유적지 전시관'",
+            'focus': """
+                - 역사적 가치가 있는 문화재와 유적지
+            """
+        },
+        '휴양': {
+            'query': f"'{user_info['destination']} {user_info['detail_destination']} 자연 공원 힐링 명소'",
+            'focus': """
+                - 자연경관이 뛰어난 장소
+                - 도시공원과 휴식공간
+                - 산책로와 전망대
+                - 힐링 카페와 휴식 공간
+            """
+        },
+        '액티비티': {
+            'query': f"'{user_info['destination']} {user_info['detail_destination']} 체험 액티비티 레저'",
+            'focus': """
+                - 체험형 관광지와 액티비티
+                - 레저스포츠 시설
             
-            **주의사항:**
-            - {user_info['age']} {user_info['gender']}이(가) {user_info['companion']}와 함께하는 
-            {user_info['style']} {destination} 여행을 위한 장소 15개 리스트를 작성하세요.
-            - 계절과 날씨를 고려한 추천
-            - {user_info['age']} {user_info['gender']}의 선호도 고려
+            """
+        },
+        'SNS감성': {
+            'query': f"'{user_info['destination']} {user_info['detail_destination']} 인스타 핫플 포토스팟'",
+            'focus': """
+                - 인스타그램 인기 장소
+                - 뷰가 좋은 카페와 레스토랑
+                - 포토스팟과 촬영 포인트
+            
+            """
+        },
+        '식도락': {
+            'query': f"'{user_info['destination']} {user_info['detail_destination']} 맛집 현지맛집 먹거리'",
+            'focus': """
+                - 현지 맛집과 대표 음식점
+                - 특색있는 카페와 디저트
+                - 예약 필요 여부와 웨이팅
+                - 인기 메뉴와 가격대
+            """
+        }
+    }
 
-            반드시 문자열로 작성
+    config = style_task_configs[user_info['style']]
 
-            """,
-        expected_output='사용자 특성에 맞는 맞춤형 여행 추천 보고서',
-        agent=personal_researcher
-    )
-
-
-    # Task 1: 관광지 분석
-    tourist_spot_task = Task(
-        name="관광지 데이터 분석",
+    # 1. 관광지 분석 태스크
+    spot_analysis_task = Task(
+        name=f"{user_info['style']} 관광지 분석",
         description=f"""
-            {destination}
-            반드시 CSV 파일의 '분류' 컬럼에서 '{style}' 스타일에 맞는 장소만 찾아주세요.
-            - 여행 스타일별 키워드:
-            * 문화재: '역사유적지', '박물관', '전시시설'
-            * 휴양: '자연경관', '도시공원', '테마공원', '레저스포츠시설'
-            * 액티비티: '레저스포츠시설', '체험시설'
-            * SNS감성: '랜드마크관광', '테마공원'
-            * 식도락: '시장', '쇼핑몰'
-        
-            다음 형식으로 출력해주세요:
-            장소: [관광지명]
-            주소: [주소]
-    
+            검색어: {config['query']}
+            
+            {user_info['style']} 스타일에 맞는 장소를 찾아 분석해주세요:
+            {config['focus']}
+            
+            - {user_info['age']} {user_info['gender']}의 선호도 고려
+            - {user_info['companion']}와 함께하기 좋은 장소 위주
+            - 상세 주소와 영업시간 포함
         """,
-        expected_output="관광지 추천 목록",
+        expected_output=f"{user_info['destination']} {user_info['style']} 한국어 관광지 목록",  # expected_output 추가
+
         agent=tourist_spot_researcher
     )
 
-
-        # Task 2: 맛집 분석
+    # 2. 맛집 분석 태스크
     restaurant_task = Task(
-        name="{destination}주변 맛집 분석",
+        name="주변 맛집 분석",
         description=f"""
-                {destination}
-                tourist_spot_task에서 조회된 관광지 주소를 기반으로  파일에서 주변 맛집을 검색하세요.
-                반드시 CSV 파일의 '주소' 컬럼에서 행정구역이 일치하는 장소만 찾아주세요.
-                
-                각 구별로 다음과 같이 한 번씩 검색하세요:
-                {{
-                "search_query": "행정구", "행정시"
-                }}
+            spot_analysis_task 에서 찾은 관광지마다 주변 맛집과 카페를 검색하세요.
+            관광지 주변의 맛집을 검색하고 분석해주세요:
+            - 관광지에서 도보 20분 이내 거리
+            - {user_info['age']} {user_info['gender']}의 선호도 고려
+            - {user_info['companion']}와 식사하기 좋은 분위기
+            
+        """,
+        expected_output="한국어로 된 관광지 주변 맛집 목록",  # expected_output 추가
 
-                이런 식으로 각 시,구별로 개별 검색을 수행하세요.
-
-                  
-                각 관광지 주소의 구(區)를 기준으로 2-3곳의 맛집을 추천하세요.
-
-                다음 형식으로 출력해주세요.
-                1. 식당: [맛집명]
-                주소: [도로명주소]
-
-            """,
-        expected_output="행정구역별 맛집 추천 목록",
         agent=restaurant_researcher
-)
+    )
 
+
+    # 맛집 검색 쿼리 설정
+    search_query = f"{user_info['destination']} {user_info['detail_destination']} 맛집"
+
+    tool = SerperDevTool()
+
+    try:
+        # 맛집 검색 수행
+        restaurant_results = tool._run({"tool_input": search_query})
+    
+        # 결과를 restaurant_task에 전달
+        restaurant_task.description += f"\n\n검색된 맛집 정보:\n{restaurant_results}"
+    except Exception as e:
+        print(f"맛집 검색 중 오류 발생: {e}")
 
     nights, days = calculate_trip_days(user_info['start_date'], user_info['end_date'])
-    
-    
 
+
+
+    # 3. 일정 계획 태스크
     planning_task = Task(
         name="여행 일정 계획 수립",
         description=f"""
                 도로명주소를 문자열로 전달하고 반환하세요.
-                세 가지 task의 결과를 균형있게 활용하여 {days}일간의 {age}대 {style} {destination}여행 일정을 계획하세요.
+                tourist_spot_researcher결과값과 restaurant_researcher 조사 결과를 바탕으로 이동 동선을 짜주세요
+                관광지 근처 맛집들을 일정에 반영하여 하루 동안 관광지와 맛집을 함께 고려해 주세요.
+                {days}일간의 {age}대 {style} {destination}{detail_destination}여행 일정을 계획하세요.
 
                  장소 주소 검색 시:
+                 - ** tourist_spot_researcher 장소목록과 restaurant_researcher 장소목록을 모두 정확한 주소값을 받아주세요.**
                 - 네이버 검색은 **다음과 같은 형식**으로 장소명을 전달해야 합니다.
                 **네이버 검색 사용 시 주의사항:**
                 - Action Input은 반드시 딕셔너리 형식으로 입력하세요.
@@ -471,35 +544,27 @@ def create_tasks(agents, user_info):
                 - Action Input: "가로수길"  # 따옴표로 감싼 문자열만 입력하면 안 됩니다.
                 - Action Input: {{"name": "가로수길"}}  # 키 이름이 잘못되었습니다.
 
-                반영 비율:
-                1. personal_task (웹 검색 결과) - 60% 반영
-                    - 반드시 하루에 2-3곳은 포함할 것
 
-                2. tourist_spot_task (관광지 CSV) - 20% 반영
-                    - 유명 관광지나 랜드마크는 하루 1곳 정도만 포함
-                    - 이동 동선 상 필요한 경우에만 추가
-           
-                3. restaurant_task (맛집 CSV) - 20% 반영
-                    - 점심, 저녁 식사 시간에 맞춰 배치
-                    - 주요 장소 근처의 맛집 위주로 선정
+
+                 **⚠️ 중요: 일정 작성 시 필수 규칙 ⚠️**
+                1. **절대 규칙: 이미 일정에 포함된 장소는 다시 사용하지 마세요!**
+                   - 모든 관광지와 맛집은 한 번만 사용해야 합니다
+                   - 동일한 장소를 다른 날짜에 재방문하는 일정은 금지됩니다
+                   - 새로운 장소를 추천하여 다양한 경험을 제공해주세요
+                2. **절대 규칙: 여행장소와 근처 맛집을 붙여서 경로를 짜주세요.**
+                3. **절대 규칙: 여행장소끼리는 30분을 넘지 않도록 해주세요.**
+                4. **절대 규칙: 각 장소의 도로명주소를 반드시 확인하고, 네이버 검색을 통해 정확한 주소를 입력해 주세요.**
+                5. **절대 규칙: 식사, 간식, 휴식 등을 고려하여 현실적인 여행 계획을 세워주세요.**
                 
 
-                **일정 작성 가이드:**
-                이동 시간 규칙:
-                1. 1시간 이내로 이동 장소
-                2. 연속된 장소들은 반드시 같은 시/군/구 내에서 선택
-                3. 다른 시/군으로 이동할 경우 다음 날 일정으로 계획
-                4. 하루에 한 개의 시/군만 방문
-                5. 각 장소의 도로명주소 필수 (네이버 검색으로 확인)
-                6. 반드시 식사, 간식, 휴식 등을 고려해 현실적인 여행계획을 고려하세요.
-                 - 오전(9-12시): personal_task + tourist_spot_task
-                - 점심(12-2시): restaurant_task의 맛집
-                - 오후(2-6시): tourist_spot_task의 관광지 + personal_task의 장소
-                - 저녁(6시 이후): restaurant_task의 맛집 + personal_task의 저녁 장소
+                **일정 시간대 규칙:**
+                - 오전 (9-12시): 관광지 방문 (tourist_spot_task) 
+                - 점심 (12-2시): 맛집 방문 (오전의 도로명과동일한 "동", "읍" "면", "리","로", "길" 의 맛집) 
+                - 오후 (2-4시): 관광지  (tourist_spot_task )
+                - 오후 (3-5시): 카페 방문( 오후의 도로명과동일한 "동", "읍","로", "길" 의 맛집)
+                - 저녁 (6시 이후): 맛집 방문 (restaurant_task) 또는 관광지 (tourist_task)
 
-                1일차: [도시/군/구] 내 일정만 구성
-                2일차: [도시/군/구] 내 일정만 구성
-                3일차: [도시/군/구] 내 일정만 구성
+            
 
                 **반드시 아래의 JSON 형식으로 작성하고, {days}일 모두 포함해야 합니다**
 
@@ -508,21 +573,21 @@ def create_tasks(agents, user_info):
                 "Day 1": [
                     {{
                         "time": "시간",
-                        "place": {{
+                        "place1": {{
                             "장소": "장소명",
                             "address": "주소"
                         }}
                     }},
                     {{
                         "time": "시간",
-                        "place": {{
+                        "place1": {{
                             "장소": "장소명",
                             "address": "주소"
                         }}
                     }},
                     {{
                         "time": "시간",
-                        "place": {{
+                        "place1": {{
                             "장소": "장소명",
                             "address": "주소"
                         }}
@@ -544,12 +609,16 @@ def create_tasks(agents, user_info):
     
            
         """,
-        expected_output="정확한 형식의 {days}일간 여행 일정표",
+        expected_output="정확한 형식의 {days}일간 한국어 여행 일정표",
         agent=itinerary_planner,
         
     )
 
-    return [personal_task, tourist_spot_task, restaurant_task,  planning_task]
+    return [spot_analysis_task, restaurant_task, planning_task]
+
+
+
+
 
 
 
@@ -561,81 +630,119 @@ def plan_travel(user_info: dict):
        api_key=os.getenv("OPENAI_API_KEY"),
        model_name="gpt-4o-mini",
        temperature=0.7,
-       max_tokens=2000
+       max_tokens=2000,
+       model_kwargs={
+            "messages": [
+                {"role": "system", "content": "당신은 한국어로 응답하는 여행 계획 전문가입니다. 모든 응답은 한국어로 해주세요."},
+            ]}
     )
-
-
-    # 날짜를 문자열로 변환하여 user_info에 저장
-    user_info['start_date'] = user_info['start_date'].strftime('%Y-%m-%d')
-    user_info['end_date'] = user_info['end_date'].strftime('%Y-%m-%d')
-
 
    # 에이전트 생성
-    personal_researcher, tourist_spot_researcher, restaurant_researcher, itinerary_planner = create_travel_agents(llm, user_info)
+    tourist_spot_researcher, restaurant_researcher, itinerary_planner = create_travel_agents(llm, user_info)
    
    # 작업 생성 
-    tasks = create_tasks([personal_researcher, tourist_spot_researcher, restaurant_researcher, itinerary_planner], user_info)
-    personal_task = tasks[0]
-    tourist_spot_task = tasks[1]
-    restaurant_task = tasks[2]
-    planning_task = tasks[3]
+    tasks = create_tasks([tourist_spot_researcher, restaurant_researcher, itinerary_planner], user_info)
+    spot_analysis_task = tasks[0]
+    restaurant_task = tasks[1]
+    planning_task = tasks[2]  # 3개의 task만 있으므로 인덱스는 0, 1, 2
 
     crew = Crew(
-        agents=[personal_researcher, tourist_spot_researcher, restaurant_researcher, itinerary_planner],
-        tasks=[tourist_spot_task, restaurant_task, personal_task, planning_task],
+        agents=[tourist_spot_researcher, restaurant_researcher, itinerary_planner],
+        tasks=[spot_analysis_task, restaurant_task, planning_task],
         verbose=True,
         task_dependencies={
-              # 맛집은 관광지 기반으로 검색
-            planning_task: [personal_task]   # planning은 모든 결과 활용
+            
+            restaurant_task: [spot_analysis_task],  # 맛집 분석은 관광지 분석 결과에 의존
+            planning_task: [spot_analysis_task, restaurant_task] 
         }
     )
-    # 시작 전 Crew의 설정 상태를 출력
-    print("Crew 설정 상태:", crew)
+    # crew_output = crew.kickoff()
 
-    crew_output = crew.kickoff()
+    # 첫 번째 crew 실행
+    try:
+        # crew 한 번만 실행
+        crew_output = crew.kickoff()
+        
+        # 관광지 분석 결과 처리
+        tourist_spot_analysis_result = None
+        if crew_output and crew_output.tasks_output:
+            raw_output = crew_output.tasks_output[0].raw
+            if raw_output:
+                if isinstance(raw_output, (list, dict)):
+                    tourist_spot_analysis_result = json.dumps(raw_output, ensure_ascii=False)
+                else:
+                    tourist_spot_analysis_result = str(raw_output)
+            else:
+                tourist_spot_analysis_result = "분석 결과가 없습니다"
+        
+        if not tourist_spot_analysis_result:
+            tourist_spot_analysis_result = f"{user_info['destination']} {user_info['detail_destination']}"
+        
+        logger.info(f"관광지 분석 결과: {tourist_spot_analysis_result}")
+
+        # restaurant_task 설명 업데이트
+        search_query = f"{tourist_spot_analysis_result} 주변 맛집"
+        restaurant_task.description = f"""
+            관광지 정보: {tourist_spot_analysis_result}
+            해당 정보를 바탕으로, 주변의 맛집을 검색하고 추천해주세요. 
+            검색 쿼리: {search_query}
+        """
+
 
     # planning_task의 인덱스 찾기
-    try:
-        task_index = crew.tasks.index(planning_task)
-    except ValueError:
-        print("Error: planning_task가 crew.tasks에 없습니다.")
-        return None
+        try:
+            task_index = crew.tasks.index(planning_task)
+        except ValueError:
+            print("Error: planning_task가 crew.tasks에 없습니다.")
+            return None
 
-    # planning_task의 출력 가져오기
-    planning_task_output = crew_output.tasks_output[task_index]
+        # planning_task의 출력 가져오기
+        planning_task_output = crew_output.tasks_output[task_index]
 
-    # 결과 추출
-    result = None
-    if hasattr(planning_task_output, 'raw'):
-        result = planning_task_output.raw
-    elif hasattr(planning_task_output, 'summary'):
-        result = planning_task_output.summary
-    elif hasattr(planning_task_output, 'dict'):
-        result_dict = planning_task_output.dict()
-        if 'raw' in result_dict:
-            result = result_dict['raw']
-        elif 'summary' in result_dict:
-            result = result_dict['summary']
-    else:
-        print("Error: planning_task_output에서 결과를 추출할 수 없습니다.")
-        print("TaskOutput 객체의 속성:", dir(planning_task_output))
-        return None
+        # TaskOutput에서 raw 데이터 추출
+        raw_output = planning_task_output.raw
 
-    # # 결과 반환
-    # return result
+        # data 디렉토리 생성 및 파일 저장
+        data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'travel','data')
+        os.makedirs(data_dir, exist_ok=True)
+        output_file = os.path.join(data_dir, 'test.tmp')
+    
+        # planning_task_output을 직접 저장
+        with open(output_file, 'w', encoding='utf-8') as f:
+            if isinstance(raw_output, str):
+                f.write(raw_output)
+            else:
+            # raw_output이 dict나 list 같은 객체인 경우 JSON으로 변환
+                json.dump(raw_output, f, ensure_ascii=False, indent=2)
+    
+        print(f"결과가 {output_file}에 저장되었습니다.")
 
-    # 결과 반환
-    if isinstance(result, str):
-        # 이미 JSON 문자열인 경우
-        return json.loads(result)
-    elif isinstance(result, dict):
-        # 딕셔너리인 경우
+
+        # 결과 추출
+        result = None
+        if hasattr(planning_task_output, 'raw'):
+            result = planning_task_output.raw
+        elif hasattr(planning_task_output, 'summary'):
+            result = planning_task_output.summary
+        elif hasattr(planning_task_output, 'dict'):
+            result_dict = planning_task_output.dict()
+            if 'raw' in result_dict:
+                result = result_dict['raw']
+            elif 'summary' in result_dict:
+                result = result_dict['summary']
+        else:
+            print("Error: planning_task_output에서 결과를 추출할 수 없습니다.")
+            print("TaskOutput 객체의 속성:", dir(planning_task_output))
+            return None
+
+        # 결과 반환
         return result
-    else:
-        print("Error: 예상치 못한 result 형식:", type(result))
+    
+    
+
+    except Exception as e:
+        logger.error(f"Crew 실행 중 오류 발생: {str(e)}")
         return None
-
-
 
 
 if __name__ == "__main__":
@@ -644,6 +751,7 @@ if __name__ == "__main__":
        "age": "50대",
        "companion": "친구",
        "destination": "제주",
+       "detail_destination": "제주",
        "style": "휴양",
        "start_date": "2024-10-30",
        "end_date": "2024-11-1"
@@ -667,9 +775,13 @@ if __name__ == "__main__":
             formatted_result = json.loads(result)
             # formatted_result를 사용하여 원하는 데이터 처리
             print(json.dumps(formatted_result, ensure_ascii=False, indent=2))
+
+            
         except json.JSONDecodeError as e:
             print("JSON 파싱 오류:", e)
             print("에이전트의 출력 결과를 확인하세요.")
             print(result)
     else:
         print("여행 일정 생성 중 오류가 발생했습니다.")
+
+    
