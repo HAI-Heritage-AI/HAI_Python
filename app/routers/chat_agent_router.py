@@ -1,18 +1,23 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Optional
-from app.agents import travel_chat_agent  # 전역 TravelChatAgent 인스턴스를 가져옴
+from typing import Optional, Dict, Any
+from app.chat_agent import TravelChatAgent
 import json
 
 class ChatRequest(BaseModel):
     question: str
-    context: Optional[str] = None
+    user_info: Optional[Dict[str, Any]] = None
 
     class Config:
         schema_extra = {
             "example": {
                 "question": "여행에 필요한 내용을 입력해주세요.",
-                "context": "이전 여행 계획 내용..."
+                "user_info": {
+                    "destination": "경북",
+                    "detail_destination": "경주시",
+                    "style": "관광",
+                    "travel_plan": None
+                }
             }
         }
 
@@ -23,14 +28,23 @@ chat_agent_router = APIRouter(
     tags=["채팅에이전트"]
 )
 
+chat_agent = TravelChatAgent()
+
 @chat_agent_router.post("/chatagent", response_model=ChatResponse)
 async def chat_with_agent(request: ChatRequest):
     """여행 관련 질문에 답변합니다."""
     try:
-        # TravelChatAgent를 통해 답변 생성
-        answer = await travel_chat_agent.get_answer(
+        # 사용자 정보가 있고 travel_plan이 없는 경우에만 user_info 설정
+        if request.user_info and not request.user_info.get('travel_plan'):
+            # 파일에서 로드된 travel_plan 유지
+            user_info = request.user_info.copy()
+            user_info['travel_plan'] = chat_agent.current_travel_plan
+            chat_agent.set_user_info(user_info)
+
+        # 답변 생성
+        answer = await chat_agent.get_answer(
             question=request.question,
-            context=json.dumps(travel_chat_agent.current_travel_plan) if travel_chat_agent.current_travel_plan else None
+            context=json.dumps(chat_agent.current_travel_plan) if chat_agent.current_travel_plan else None
         )
 
         return ChatResponse(answer=answer)
