@@ -8,6 +8,7 @@ import httpx  # API 호출을 위한 httpx 사용
 from datetime import datetime
 import logging
 import json
+import os
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -56,6 +57,7 @@ class TravelRequest(BaseModel):
     age: AgeGroup = Field(..., description="여행자의 연령대")
     companion: Companion = Field(..., description="동행인 유형")
     destination: str = Field(..., description="여행 목적지", min_length=2)
+    detail_destination: str = Field(..., description="여행 세부 목적지", min_length=2)
     style: TravelStyle = Field(..., description="선호하는 여행 스타일")
     startDate: datetime = Field(..., description="여행 시작 날짜 (YYYY-MM-DD 형식)")
     endDate: datetime = Field(..., description="여행 종료 날짜 (YYYY-MM-DD 형식)")
@@ -67,6 +69,7 @@ class TravelRequest(BaseModel):
                 "age": "20대",
                 "companion": "친구",
                 "destination": "서울",
+                "detail_destination": "강남",
                 "style": "SNS감성",
                 "startDate": "2024-11-20",
                 "endDate": "2024-11-22",
@@ -91,6 +94,7 @@ async def generate_travel_plan(request: TravelRequest):
             "age": request.age.value,
             "companion": request.companion,
             "destination": request.destination,
+            "detail_destination": request.detail_destination,
             "style": request.style,
             "start_date": request.startDate,
             "end_date": request.endDate,
@@ -141,13 +145,26 @@ async def generate_travel_plan(request: TravelRequest):
                 )
             festival_data = festival_response.json()
 
+        # 여행 계획 + 축제 데이터 병합
+        response_data = {
+            "status": "success",
+            "travel_plan": travel_plan,
+            "duration": user_info["duration"],
+            "festivals": festival_data,
+        }
+
+        # data 디렉토리 생성 및 plan.json 파일 저장
+        data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..','travel', 'data')
+        os.makedirs(data_dir, exist_ok=True)
+        output_file = os.path.join(data_dir, 'plan.json')
+
+        with open(output_file, 'w', encoding='utf-8') as f:
+            json.dump(response_data, f, ensure_ascii=False, indent=2)
+
+        print(f"결과가 {output_file}에 저장되었습니다.")
+
         # 여행 계획 + 축제 데이터 반환
-        return TravelResponse(
-            status="success",
-            travel_plan=travel_plan,
-            duration=user_info["duration"],
-            festivals=festival_data,
-        )
+        return TravelResponse(**response_data)
 
     except ValueError as ve:
         logging.error(f"Unexpected error: {str(ve)}")
