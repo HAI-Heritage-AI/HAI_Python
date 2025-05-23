@@ -1,59 +1,66 @@
 import os
-import time
 import json
 import faiss
 import pickle
 import numpy as np
+import pandas as pd
 from sentence_transformers import SentenceTransformer
 from ragas.dataset_schema import EvaluationDataset, SingleTurnSample
 from ragas.evaluation import evaluate
 from ragas.metrics._context_precision import ContextPrecision
 from dotenv import load_dotenv
-import pandas as pd
+from rank_bm25 import BM25Okapi
+from eunjeon import Mecab
 
-# .env 파일 로드
+# 환경 변수 로드
 load_dotenv()
 
-# OpenAI API 키 설정
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-if not OPENAI_API_KEY:
-    raise ValueError("OPENAI_API_KEY가 설정되지 않았습니다. .env 파일을 확인해주세요.")
-
-# FAISS 인덱스 및 메타데이터 파일 로드
-index_file = "../FAISS/Index/jhgan_cosine_index.bin"
-metadata_file = "../FAISS/Metadata/jhgan_metadata.pkl"
-
-try:
-    index = faiss.read_index(index_file)
-    with open(metadata_file, "rb") as f:
-        metadata = pickle.load(f)
-    print("FAISS 인덱스 및 메타데이터 로드 성공!")
-except Exception as e:
-    print(f"FAISS 인덱스 및 메타데이터 로드 실패: {e}")
-    exit()
-
-# SentenceTransformer 모델 로드
+# 전역 변수 초기화
 embedding_model = SentenceTransformer("jhgan/ko-sroberta-multitask")
+mecab = Mecab()
 
-# 검색 함수
-def search_faiss_index(query: str, top_k: int = 5):
+# FAISS 인덱스 및 메타데이터 로드
+base_dir = os.path.dirname(os.path.realpath(__file__))
+index_file = os.path.join(base_dir, "../FAISS/Index/jhgan_cosine_index.bin")
+metadata_file = os.path.join(base_dir, "../FAISS/Metadata/jhgan_metadata.pkl")
+bm25_index_file = os.path.join(base_dir, "../FAISS/Metadata/bm25_index.pkl")
+
+with open(metadata_file, "rb") as f:
+    metadata = pickle.load(f)
+documents = [entry["내용"] for entry in metadata]
+
+index = faiss.read_index(index_file)
+
+if os.path.exists(bm25_index_file):
+    with open(bm25_index_file, "rb") as f:
+        bm25 = pickle.load(f)
+else:
+    tokenized_documents = [[word for word, pos in mecab.pos(doc) if pos in ['NNP', 'NNG', 'NP', 'VV', 'VA']] for doc in documents]
+    bm25 = BM25Okapi(tokenized_documents)
+
+# 하이브리드 서치 함수
+def hybrid_search(query: str, top_k: int = 5, alpha: float = 0.5, normalization_method: str = "min_max"):
+    query_tokens = [word for word, pos in mecab.pos(query) if pos in ['NNP', 'NNG', 'NP', 'VV', 'VA']]
+    bm25_scores = bm25.get_scores(query_tokens)
+
     query_embedding = embedding_model.encode(query).astype("float32").reshape(1, -1)
-    distances, indices = index.search(query_embedding, top_k)
+    faiss_distances, faiss_indices = index.search(query_embedding, len(metadata))
+    faiss_scores = -faiss_distances[0]
 
-    results = []
-    for i, idx in enumerate(indices[0]):
-        if idx < len(metadata):
-            results.append({
-                "text_segment": metadata[idx]["text_segment"],
-                "distance": float(distances[0][i])
-            })
+    if normalization_method == "min_max":
+        bm25_scores = (bm25_scores - np.min(bm25_scores)) / (np.max(bm25_scores) - np.min(bm25_scores))
+        faiss_scores = (faiss_scores - np.min(faiss_scores)) / (np.max(faiss_scores) - np.min(faiss_scores))
+
+    final_scores = alpha * bm25_scores + (1 - alpha) * faiss_scores
+    sorted_indices = np.argsort(-final_scores)[:top_k]
+
+    results = [{"text_segment": metadata[idx]["내용"], "score": final_scores[idx]} for idx in sorted_indices]
     return results
 
 # 데이터셋 로드
 with open('national_heritage_qa_dataset_converted.json', 'r', encoding='utf-8') as f:
     data = json.load(f)
 
-# 데이터 변환 및 검색 결과 저장
 retrieval_results = []
 samples = []
 
@@ -61,75 +68,44 @@ for item in data:
     query = item["question"]
     ground_truth = item["ground_truth"]
 
-    retrieved_documents = search_faiss_index(query, top_k=5)
-    retrieval_results.append({
-        "query": query,
-        "retrieved_documents": retrieved_documents,
-        "ground_truth": ground_truth
-    })
-    samples.append(
-        SingleTurnSample(
-            user_input=query,
-            retrieved_contexts=[doc["text_segment"] for doc in retrieved_documents],
-            reference=ground_truth,
+    try:
+        retrieved_documents = hybrid_search(query, top_k=5)
+        retrieval_results.append({
+            "query": query,
+            "retrieved_documents": retrieved_documents,
+            "ground_truth": ground_truth
+        })
+        samples.append(
+            SingleTurnSample(
+                user_input=query,
+                retrieved_contexts=[doc["text_segment"] for doc in retrieved_documents],
+                reference=ground_truth,
+            )
         )
-    )
+    except Exception as e:
+        print(f"검색 실패: {e}")
 
-# 검색 결과 저장
-output_file = "retrieval_results_ContextPrecision.json"
-with open(output_file, "w", encoding="utf-8") as f:
+# 검색 결과를 JSON 파일로 저장
+with open("retrieval_results.json", "w", encoding="utf-8") as f:
     json.dump(retrieval_results, f, ensure_ascii=False, indent=4)
-print(f"검색 결과가 {output_file}에 저장되었습니다.")
+
+# 검색 결과를 CSV 파일로 저장
+retrieval_results_df = pd.DataFrame(retrieval_results)
+retrieval_results_df.to_csv("retrieval_results.csv", index=False, encoding="utf-8-sig")
 
 # RAGAS 데이터셋 생성
 dataset = EvaluationDataset(samples=samples)
 
-# 검색 성능 평가 메트릭 정의
 metrics = [ContextPrecision()]
+results = evaluate(dataset=dataset, metrics=metrics, show_progress=True)
 
-# 평가 실행
-valid_samples = []
-failed_samples = []
+# 평가 결과를 JSON 파일로 저장
+results.to_json("evaluation_results.json")
 
-try:
-    for i, sample in enumerate(dataset.samples):
-        try:
-            print(f"샘플 {i + 1}/{len(dataset.samples)} 평가 중...")
-            result = evaluate(EvaluationDataset(samples=[sample]), metrics=metrics, show_progress=False)
-            print(f"평가 결과: {result}")
-            valid_samples.append(sample)  # 성공한 샘플 추가
-        except Exception as e:
-            print(f"샘플 {i + 1} 평가 실패: {e}")
-            failed_samples.append({"sample": sample, "error": str(e)})  # 실패 샘플 저장
+# 평가 결과를 CSV 파일로 저장
+results_df = results.to_pandas()
+results_df.to_csv("evaluation_results.csv", index=False, encoding="utf-8-sig")
 
-    # 실패한 샘플 저장
-    if failed_samples:
-        failed_output_file = "failed_samples.json"
-        with open(failed_output_file, "w", encoding="utf-8") as f:
-            json.dump(failed_samples, f, ensure_ascii=False, indent=4)
-        print(f"실패한 샘플이 {failed_output_file}에 저장되었습니다.")
-
-    # 성공한 샘플로 최종 평가
-    if valid_samples:
-        valid_dataset = EvaluationDataset(samples=valid_samples)
-        final_results = evaluate(dataset=valid_dataset, metrics=metrics, show_progress=True)
-        print("최종 평가 결과:")
-        print(final_results)
-
-        # pandas DataFrame으로 변환
-        df = final_results.to_pandas()
-
-        # JSON 저장
-        json_output_file = "final_evaluation_results.json"
-        df.to_json(json_output_file, orient="records", force_ascii=False, indent=4)
-        print(f"최종 평가 결과가 {json_output_file}에 저장되었습니다.")
-
-        # CSV 저장
-        csv_output_file = "final_evaluation_results.csv"
-        df.to_csv(csv_output_file, index=False, encoding="utf-8-sig")
-        print(f"최종 평가 결과가 {csv_output_file}에 저장되었습니다.")
-    else:
-        print("평가에 성공한 샘플이 없습니다.")
-
-except Exception as e:
-    print(f"평가 중 알 수 없는 오류 발생: {e}")
+print("결과가 JSON 및 CSV 파일로 저장되었습니다.")
+print("평가 결과:")
+print(results)
